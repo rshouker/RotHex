@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+even when working in js, make sure that for each function or other construct the argument and return types are documented.

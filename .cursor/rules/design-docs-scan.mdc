@@ -1,0 +1,6 @@
+---
+alwaysApply: true
+---
+- Read `design_docs/index.md` to decide which design doc(s) to open for a task.
+- If no `design_docs/index.md` exists create it and have a list of all other design doc in the design_docs directory, and some details on what can be found in each of those files.
+- Whenever you add or update a document in `design_docs/`, update `design_docs/index.md` accordingly.

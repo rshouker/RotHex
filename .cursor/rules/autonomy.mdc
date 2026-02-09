@@ -1,0 +1,7 @@
+---
+alwaysApply: true
+---
+- Do only what I explicitly asked.
+- If you believe additional work is needed (refactor, extra files, docs, cleanup, follow-up fixes), do not do it automatically.
+- Instead: briefly list the suggested additional actions and ask which (if any) I want.
+- If the request is ambiguous, ask a clarifying question before making changes.
