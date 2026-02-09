@@ -24,6 +24,8 @@ const HOVER_HIGHLIGHT_COLOR = 0x26d6ff;
 const OPERATOR_LABEL_COLOR = 0xffffff;
 const PIVOT_MARKER_COLOR = 0xffd966;
 const PIVOT_MARKER_RADIUS_PX = 4;
+const NORMAL_BACKGROUND_ALPHA = 0.75;
+const PREVIEW_BACKGROUND_ALPHA = 1.0;
 
 /**
  * @param {number} fallback_value
@@ -169,7 +171,7 @@ const background_sprite = new Sprite(Texture.from(source_image));
 background_sprite.position.set(tile_derivation.image_rect.x, tile_derivation.image_rect.y);
 background_sprite.width = tile_derivation.image_rect.width;
 background_sprite.height = tile_derivation.image_rect.height;
-background_sprite.alpha = 0.75;
+background_sprite.alpha = NORMAL_BACKGROUND_ALPHA;
 background_layer.addChild(background_sprite);
 
 /** @type {Map<string, AnchorInstance[]>} */
@@ -225,6 +227,17 @@ let hovered_instance = null;
 /** @type {Set<string>} */
 let highlighted_tile_ids = new Set();
 let interaction_locked = false;
+let is_preview_mode = false;
+
+/**
+ * @param {boolean} next_preview_mode
+ */
+function apply_preview_mode(next_preview_mode) {
+  is_preview_mode = next_preview_mode;
+  tile_renderer.tiles_layer.visible = !is_preview_mode;
+  pivots_layer.visible = !is_preview_mode;
+  background_sprite.alpha = is_preview_mode ? PREVIEW_BACKGROUND_ALPHA : NORMAL_BACKGROUND_ALPHA;
+}
 
 /**
  * @param {Iterable<string>} tile_ids
@@ -372,7 +385,7 @@ function update_operator_help_text(operator_id) {
   ];
   operator_help_text.text =
     `Operator: ${selected_operator_label}\n` +
-    "Switch operator: keyboard 1/2/3/4 | Left click: CW | Right click: CCW";
+    "Switch operator: keyboard 1/2/3/4 | Space: image preview | Left click: CW | Right click: CCW";
 }
 
 const input_controller = create_input_controller({
@@ -391,6 +404,9 @@ const input_controller = create_input_controller({
     update_hover_highlight(instance);
   },
   on_move_request(direction_sign, instance) {
+    if (is_preview_mode) {
+      return;
+    }
     void run_move(direction_sign, instance);
   }
 });
@@ -398,3 +414,11 @@ const input_controller = create_input_controller({
 input_controller.set_instances(instances_by_operator_id.get("ring6_60") ?? []);
 update_operator_help_text("ring6_60");
 redraw_pivot_markers("ring6_60");
+
+window.addEventListener("keydown", (keyboard_event) => {
+  if (keyboard_event.code !== "Space") {
+    return;
+  }
+  keyboard_event.preventDefault();
+  apply_preview_mode(!is_preview_mode);
+});
