@@ -22,6 +22,61 @@ Keep the move/operator logic library-agnostic.
 - `HOVER_HIGHLIGHT_COLOR: number`
 - `PIVOT_MARKER_COLOR: number` (optional)
 
+## Parameter derivation (runtime values, not fixed constants)
+The following values should be treated as derived per image and viewport:
+- `GRID_W`, `GRID_H` (with `GRID_H` odd)
+- `TILE_SIZE_PX`
+
+Inputs:
+- `n` = desired total number of cells (target, approximate)
+- `ar` = image aspect ratio = `imageWidth / imageHeight`
+- `d` = desired padding, in tile-size units, where each side keeps at least
+  `d * TILE_SIZE_PX` from board bounds to image bounds
+
+### Geometry equations used for derivation
+Let `s = TILE_SIZE_PX`.
+
+Cell count for alternating rows (`GRID_H` odd):
+- `cells(W, H) = W * H + (H - 1) / 2`
+
+Padded board bounds in units of `s`:
+- `paddedWidthInS(W, d) = sqrt(3) * (W + 1) + 2d`
+- `paddedHeightInS(H, d) = 1.5 * H + 0.5 + 2d`
+
+Padded board aspect ratio:
+- `boardAspect(W, H, d) = paddedWidthInS(W, d) / paddedHeightInS(H, d)`
+
+### Solve continuous estimate first, then snap to integer odd grid
+1. Solve the system in reals:
+   - `W * H + (H - 1) / 2 = n`
+   - `boardAspect(W, H, d) = ar`
+2. Substituting `W = (n - (H - 1) / 2) / H` yields a quadratic in `H`:
+   - `A * H^2 + B * H + C = 0`
+   - `A = 1.5 * ar`
+   - `B = ar * (0.5 + 2d) - 2d - sqrt(3) / 2`
+   - `C = -(sqrt(3) / 2) * (2n + 1)`
+3. Take the positive root as `H*`, then compute:
+   - `W* = (n - (H* - 1) / 2) / H*`
+4. Generate integer candidates near this real solution:
+   - odd `H` values near `H*` (nearest odd, and +/-2, +/-4, ...)
+   - for each candidate `H`, evaluate nearby integer `W` values
+5. Choose best candidate by:
+   - primary: smallest `abs(cells(W, H) - n)`
+   - secondary: smallest `abs(boardAspect(W, H, d) - ar)`
+
+### Deriving tile size from viewport and image fit
+Use Pixi viewport (`app.screen`) and image fit area (contain-fit) together:
+
+1. Compute `tileSizeFromViewport` so board fits available screen area after
+   screen margins.
+2. Compute `tileSizeFromImage` so padded board fits inside the fitted image
+   rect (contain, no distortion).
+3. Set:
+   - `TILE_SIZE_PX = min(tileSizeFromViewport, tileSizeFromImage)`
+
+This keeps the board screen-responsive while preserving image alignment and
+avoiding forced stretch/crop.
+
 ## Types / data model
 Use these conceptual types (actual representation can be objects/maps):
 
