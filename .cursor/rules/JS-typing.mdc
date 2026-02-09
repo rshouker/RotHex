@@ -2,4 +2,11 @@
 alwaysApply: true
 ---
 
-even when working in js, make sure that for each function or other construct the argument and return types are documented.
+JavaScript typing workflow (no `.ts` source files):
+
+- Keep implementation files as `.js` only.
+- Add `// @ts-check` at the top of every new or modified `.js` source file.
+- For each function or construct, document argument and return types with JSDoc (`@param`, `@returns`, and `@typedef` where needed).
+- Prefer shared JSDoc typedefs for domain objects instead of repeating inline object shapes.
+- Keep `public/tsconfig.json` configured for JS type checking (`allowJs: true`, `checkJs: true`, `noEmit: true`).
+- Run `npm run typecheck` in `public/` after changes and fix any new type diagnostics.
