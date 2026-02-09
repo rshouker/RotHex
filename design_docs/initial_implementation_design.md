@@ -2,7 +2,7 @@
 
 ## Overview
 Implement a PixiJS-based prototype with:
-- flat-top axial hex grid (rectangular-ish bounds),
+- flat-top hex grid with an odd number of rows and alternating row lengths (`GRID_W` / `GRID_W + 1`; all cells playable),
 - unique hex tiles baked from one image,
 - 4 rotational operators (ring-6, alternating-3 even, alternating-3 odd, vertex triad),
 - pivot hover detection + shape border highlighting,
@@ -64,14 +64,35 @@ Use these conceptual types (actual representation can be objects/maps):
 - `parseCellKey("q,r") -> Cell`
 
 ### Neighbor direction order (must be consistent)
-Axial directions indexed 0..5:
-- `(+1, 0), (+1,-1), (0,-1), (-1, 0), (-1,+1), (0,+1)`
+Offset-row directions indexed 0..5, dependent on row parity:
+- **even row** (`r % 2 == 0`):
+  - `(+1, 0), (0,-1), (-1,-1), (-1, 0), (-1,+1), (0,+1)`
+- **odd row** (`r % 2 == 1`):
+  - `(+1, 0), (+1,-1), (0,-1), (-1, 0), (0,+1), (+1,+1)`
 
-### Flat-top axial -> world
+### Flat-top offset-row -> world (row-centered)
 Let `s = TILE_SIZE_PX`:
-- \(x = s * \sqrt{3} * (q + r/2)\)
-- \(y = s * 3/2 * r\)
-Then add a board origin offset.
+- `hex_w = sqrt(3) * s`
+- `hex_h = 2 * s`
+- `row_step_y = 3/2 * s`
+- `row_offset_x = (r % 2 == 0) ? (hex_w / 2) : 0`
+- \(x = q * hex_w + row_offset_x\)
+- \(y = r * row_step_y\)
+Then add a board origin offset so all rows share the same horizontal center.
+
+### Grid shape (alternating row lengths)
+Define an odd number of rows:
+- rows: `r in [0, GRID_H)` with `GRID_H` odd
+
+Row lengths alternate:
+- even rows: length `GRID_W` (top and bottom rows are even)
+- odd rows: length `GRID_W + 1`
+
+Cell indices:
+- even rows: `q in [0, GRID_W)`
+- odd rows: `q in [0, GRID_W + 1)`
+
+All cells in this shape are playable.
 
 ## Rendering layer (Pixi)
 ### Stage structure
@@ -103,6 +124,7 @@ At load time, after the image is available:
 
 Important:
 - Baking is tied to home cell (tile identity), not current location.
+ - Image alignment: compute the **grid bounding box** (including full hex extents) in world space, then set the board origin so the **center of that box** matches the **center of the source image**. The grid must fit inside the image.
 
 ### Hex polygon points (flat-top)
 Define a function returning 6 points around the origin for radius `s`:

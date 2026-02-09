@@ -12,15 +12,21 @@ Notes:
 
 ## Board
 - **Grid type:** flat-top hex grid.
-- **Coordinate system:** axial coords \((q, r)\).
-- **Shape:** “rectangular-ish” parallelogram region.
-  - Valid cells: \(0 \le q < GRID\_W\), \(0 \le r < GRID\_H\).
+- **Coordinate system:** axial-like integer \((q, r)\) columns/rows.
+- **Shape:** odd number of rows with alternating row lengths.
+  - Rows: \(0 \le r < GRID\_H\), with `GRID_H` **odd**.
+  - Row lengths alternate between `GRID_W` and `GRID_W + 1`.
+  - **Even rows** (including top and bottom) have length `GRID_W`.
+  - **Odd rows** have length `GRID_W + 1`.
+  - **Row centering:** the horizontal bounding box center is the same for every row; longer rows are centered, so their extra cell is split half-left/half-right in world space.
+  - **Playable cells:** all cells in this shape are playable.
 - **Tile size:** constant `TILE_SIZE_PX` (unassigned, ~100px scale).
 - **Tile count target:** ~100.
 
 ## Visuals
 - Tiles display the image portion they correspond to (unique per tile).
 - Tiles have a **visible border** at all times.
+- Image alignment: the **center of the grid bounding box** matches the **center of the source image**; the grid must fit inside the image.
 - Background image display is optional; tiles cover the board portion so no special interior masking is required.
 - **Hover affordance:** when the cursor is near a valid pivot, highlight the **borders of all tiles** in the affected set.
 
