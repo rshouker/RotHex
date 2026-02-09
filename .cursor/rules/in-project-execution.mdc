@@ -1,0 +1,11 @@
+---
+description: Keep processing inside project unless explicitly requested otherwise
+alwaysApply: true
+---
+
+# In-Project Execution Only
+
+- Do not process project code or assets outside the project workflow unless instructed otherwise.
+- Prefer implementation inside project source code (for this repo, `public/src`).
+- For command execution, prefer npm scripts and commands run from `public/`.
+- If an external one-off script/tool would be useful, do not use it by default; only use it when explicitly instructed otherwise.
