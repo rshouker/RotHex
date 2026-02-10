@@ -26,6 +26,7 @@ import { cell_key, create_hex_points, neighbor_cell } from "./coords.js";
  *   anchor_world: WorldPoint,
  *   cells: string[],
  *   spin_cells?: string[],
+ *   permutation_steps_cw?: number,
  *   rotation_steps_cw: number
  * }} AnchorInstance
  */
@@ -64,8 +65,10 @@ function all_cells_exist(grid, cells) {
  * @returns {OperatorDef[]}
  */
 export function get_operator_defs() {
+  // CHANGE NOTE (ring6): now uses 120° spin (rotation_steps_cw: 2).
+  // ROLLBACK: set this back to rotation_steps_cw: 1 for ring6.
   return [
-    { id: "ring6_60", rotation_steps_cw: 1 },
+    { id: "ring6_60", rotation_steps_cw: 2 },
     { id: "alt3_even_120", rotation_steps_cw: 2 },
     { id: "alt3_odd_120", rotation_steps_cw: 2 },
     { id: "vertex3_120", rotation_steps_cw: 2 }
@@ -81,7 +84,7 @@ export function get_operator_defs() {
  */
 export function build_anchor_instances(grid, operator_id, get_cell_world, tile_size_px) {
   if (operator_id === "ring6_60") {
-    return build_cell_operator_instances(grid, operator_id, [0, 1, 2, 3, 4, 5], 1, get_cell_world);
+    return build_cell_operator_instances(grid, operator_id, [0, 1, 2, 3, 4, 5], 2, get_cell_world);
   }
   if (operator_id === "alt3_even_120") {
     return build_cell_operator_instances(grid, operator_id, [0, 2, 4], 2, get_cell_world);
@@ -112,6 +115,10 @@ function build_cell_operator_instances(
 ) {
   /** @type {AnchorInstance[]} */
   const instances = [];
+  // CHANGE NOTE (ring6): ring revolution step is now decoupled from rotation step.
+  // ring6 uses 2-step permutation (120° revolve), others stay at 1-step.
+  // ROLLBACK: replace with `const permutation_steps_cw = 1;`.
+  const permutation_steps_cw = operator_id === "ring6_60" ? 2 : 1;
   for (const anchor_cell of grid.all_cells) {
     const target_cells = collect_direction_cells(anchor_cell, direction_indices);
     if (!all_cells_exist(grid, target_cells)) {
@@ -125,6 +132,7 @@ function build_cell_operator_instances(
       anchor_world: get_cell_world(anchor_cell),
       cells: target_cells.map((cell) => cell_key(cell)),
       spin_cells: [cell_key(anchor_cell)],
+      permutation_steps_cw,
       rotation_steps_cw
     });
   }

@@ -16,6 +16,7 @@
  *   anchor_world: { x: number, y: number },
  *   cells: string[],
  *   spin_cells?: string[],
+ *   permutation_steps_cw?: number,
  *   rotation_steps_cw: number
  * }} AnchorInstance
  */
@@ -38,6 +39,9 @@ function positive_mod(value, modulus) {
 export function apply_move(state, anchor_instance, direction_sign) {
   const cycle_cell_keys = anchor_instance.cells;
   const spin_cell_keys = anchor_instance.spin_cells ?? [];
+  // CHANGE NOTE: cycle permutation step is configurable per operator via anchor metadata.
+  // ROLLBACK: remove this line and revert destination index math to +/-1.
+  const permutation_steps_cw = anchor_instance.permutation_steps_cw ?? 1;
   const cycle_length = cycle_cell_keys.length;
   const source_tile_ids = cycle_cell_keys.map((cell_key_value) => {
     const tile_id = state.cell_to_tile_id.get(cell_key_value);
@@ -49,10 +53,15 @@ export function apply_move(state, anchor_instance, direction_sign) {
 
   for (let source_index = 0; source_index < cycle_length; source_index += 1) {
     const tile_id = source_tile_ids[source_index];
+    // CHANGE NOTE: previously this was always +/-1 (fixed 60° revolution).
+    // ROLLBACK target:
+    //   direction_sign === 1
+    //     ? (source_index + 1) % cycle_length
+    //     : (source_index - 1 + cycle_length) % cycle_length;
     const destination_index =
       direction_sign === 1
-        ? (source_index + 1) % cycle_length
-        : (source_index - 1 + cycle_length) % cycle_length;
+        ? (source_index + permutation_steps_cw) % cycle_length
+        : (source_index - permutation_steps_cw + cycle_length) % cycle_length;
     const destination_cell_key = cycle_cell_keys[destination_index];
     const previous_rotation_steps = state.tile_rot.get(tile_id) ?? 0;
 

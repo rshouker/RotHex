@@ -375,7 +375,7 @@ async function run_move(direction_sign, anchor_instance) {
  */
 function update_operator_help_text(operator_id) {
   const operator_name_by_id = {
-    ring6_60: "1: ring6_60 (6 tiles, 60°)",
+    ring6_60: "1: ring6_60 (6 tiles, 120°)",
     alt3_even_120: "2: alt3_even_120 (3 tiles, 120°)",
     alt3_odd_120: "3: alt3_odd_120 (3 tiles, 120°)",
     vertex3_120: "4: vertex3_120 (3 tiles, 120°)"
