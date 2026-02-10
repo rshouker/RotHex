@@ -42,13 +42,30 @@ const NUMBER_MODE_BACKGROUND_X_OFFSET_RATIO = -0.44;
 const NUMBER_MODE_TILE_FILL_COLOR = 0x333333;
 const NUMBER_MODE_TILE_FILL_ALPHA = 0.6;
 const FONT_FAMILY = "Open Sans, sans-serif";
+const SUCCESS_POPUP_WIDTH_PX = 360;
+const SUCCESS_POPUP_HEIGHT_PX = 132;
+const SUCCESS_POPUP_MARGIN_TOP_PX = 52;
+const SUCCESS_POPUP_BACKGROUND_COLOR = 0x202020;
+const SUCCESS_POPUP_BORDER_COLOR = 0x66dd66;
+const SUCCESS_POPUP_TEXT_COLOR = 0xffffff;
+const SUCCESS_POPUP_BUTTON_BACKGROUND_COLOR = 0x2d7f2d;
+const SUCCESS_POPUP_BUTTON_TEXT_COLOR = 0xffffff;
+const SUCCESS_POPUP_BUTTON_WIDTH_PX = 96;
+const SUCCESS_POPUP_BUTTON_HEIGHT_PX = 34;
+const SUCCESS_POPUP_CORNER_RADIUS_PX = 12;
 
 /**
- * @typedef {{ mode: "n" | "i", grid_w: number, grid_h: number, target_cell_count: number }} UrlParams
+ * @typedef {{
+ *   mode: "n" | "i",
+ *   grid_w: number,
+ *   grid_h: number,
+ *   target_cell_count: number,
+ *   is_explore_mode: boolean
+ * }} UrlParams
  */
 
 /**
- * Parse and validate mode, h, w, n from URL. In number mode n is ignored.
+ * Parse and validate mode, h, w, n, explore from URL. In number mode n is ignored.
  * If exactly one of h or w is present, throws.
  *
  * @returns {UrlParams}
@@ -60,6 +77,8 @@ function parse_url_params() {
   const h_param = search_params.get("h");
   const w_param = search_params.get("w");
   const n_param = search_params.get("n");
+  const explore_param = search_params.get("explore");
+  const is_explore_mode = explore_param === "1";
 
   if (mode === "n") {
     const has_h = h_param !== null && h_param !== "";
@@ -87,7 +106,7 @@ function parse_url_params() {
         throw new Error("URL param h (grid height) must be odd.");
       }
     }
-    return { mode: "n", grid_w, grid_h, target_cell_count: 0 };
+    return { mode: "n", grid_w, grid_h, target_cell_count: 0, is_explore_mode };
   }
 
   // Image mode: derive grid from n (target cell count).
@@ -105,7 +124,8 @@ function parse_url_params() {
     mode: "i",
     grid_w: 0,
     grid_h: 0,
-    target_cell_count
+    target_cell_count,
+    is_explore_mode
   };
 }
 
@@ -189,6 +209,7 @@ if (!app_container_element) {
 app_container_element.appendChild(application.canvas);
 
 const url_params = parse_url_params();
+const is_explore_mode = url_params.is_explore_mode;
 
 /** @type {"n" | "i"} */
 const game_mode = url_params.mode;
@@ -348,18 +369,20 @@ const board_state = create_solved_state(grid);
 const scramble_operator_ids = ENABLED_OPERATOR_IDS.filter((operator_id) =>
   instances_by_operator_id.has(operator_id)
 );
-for (let scramble_index = 0; scramble_index < SCRAMBLE_MOVES; scramble_index += 1) {
-  if (scramble_operator_ids.length === 0) {
-    break;
+if (!is_explore_mode) {
+  for (let scramble_index = 0; scramble_index < SCRAMBLE_MOVES; scramble_index += 1) {
+    if (scramble_operator_ids.length === 0) {
+      break;
+    }
+    const random_operator_id = scramble_operator_ids[random_int(0, scramble_operator_ids.length - 1)];
+    const operator_instances = instances_by_operator_id.get(random_operator_id) ?? [];
+    if (operator_instances.length === 0) {
+      continue;
+    }
+    const random_anchor_instance = operator_instances[random_int(0, operator_instances.length - 1)];
+    const direction_sign = Math.random() < 0.5 ? /** @type {1} */ (1) : /** @type {-1} */ (-1);
+    apply_move(board_state, random_anchor_instance, direction_sign);
   }
-  const random_operator_id = scramble_operator_ids[random_int(0, scramble_operator_ids.length - 1)];
-  const operator_instances = instances_by_operator_id.get(random_operator_id) ?? [];
-  if (operator_instances.length === 0) {
-    continue;
-  }
-  const random_anchor_instance = operator_instances[random_int(0, operator_instances.length - 1)];
-  const direction_sign = Math.random() < 0.5 ? /** @type {1} */ (1) : /** @type {-1} */ (-1);
-  apply_move(board_state, random_anchor_instance, direction_sign);
 }
 
 const tile_renderer = create_tile_views({
@@ -391,12 +414,120 @@ const operator_help_text = new Text({
 operator_help_text.position.set(16, 12);
 application.stage.addChild(operator_help_text);
 
+const success_popup_layer = new Container();
+success_popup_layer.visible = false;
+const success_popup_background = new Graphics();
+const success_popup_title = new Text({
+  text: "Puzzle solved!",
+  style: {
+    fill: SUCCESS_POPUP_TEXT_COLOR,
+    fontFamily: FONT_FAMILY,
+    fontSize: 28
+  }
+});
+const success_popup_message = new Text({
+  text: "You can keep playing. Close this message to continue.",
+  style: {
+    fill: SUCCESS_POPUP_TEXT_COLOR,
+    fontFamily: FONT_FAMILY,
+    fontSize: 15
+  }
+});
+const success_popup_close_button = new Graphics();
+const success_popup_close_label = new Text({
+  text: "Continue",
+  style: {
+    fill: SUCCESS_POPUP_BUTTON_TEXT_COLOR,
+    fontFamily: FONT_FAMILY,
+    fontSize: 14
+  }
+});
+success_popup_layer.addChild(success_popup_background);
+success_popup_layer.addChild(success_popup_title);
+success_popup_layer.addChild(success_popup_message);
+success_popup_layer.addChild(success_popup_close_button);
+success_popup_layer.addChild(success_popup_close_label);
+application.stage.addChild(success_popup_layer);
+
 /** @type {AnchorInstance | null} */
 let hovered_instance = null;
 /** @type {Set<string>} */
 let highlighted_tile_ids = new Set();
 let interaction_locked = false;
 let is_preview_mode = false;
+let has_shown_solved_notification = is_explore_mode;
+
+/**
+ * Draw static visuals for solved popup.
+ */
+function draw_success_popup() {
+  success_popup_background.clear();
+  success_popup_background.roundRect(
+    0,
+    0,
+    SUCCESS_POPUP_WIDTH_PX,
+    SUCCESS_POPUP_HEIGHT_PX,
+    SUCCESS_POPUP_CORNER_RADIUS_PX
+  );
+  success_popup_background.fill({ color: SUCCESS_POPUP_BACKGROUND_COLOR, alpha: 0.95 });
+  success_popup_background.stroke({ color: SUCCESS_POPUP_BORDER_COLOR, width: 2 });
+
+  success_popup_title.anchor.set(0.5, 0);
+  success_popup_title.position.set(SUCCESS_POPUP_WIDTH_PX / 2, 14);
+  success_popup_message.anchor.set(0.5, 0);
+  success_popup_message.position.set(SUCCESS_POPUP_WIDTH_PX / 2, 54);
+
+  const button_x = (SUCCESS_POPUP_WIDTH_PX - SUCCESS_POPUP_BUTTON_WIDTH_PX) / 2;
+  const button_y = SUCCESS_POPUP_HEIGHT_PX - SUCCESS_POPUP_BUTTON_HEIGHT_PX - 12;
+  success_popup_close_button.clear();
+  success_popup_close_button.roundRect(
+    button_x,
+    button_y,
+    SUCCESS_POPUP_BUTTON_WIDTH_PX,
+    SUCCESS_POPUP_BUTTON_HEIGHT_PX,
+    8
+  );
+  success_popup_close_button.fill({
+    color: SUCCESS_POPUP_BUTTON_BACKGROUND_COLOR,
+    alpha: 1
+  });
+  success_popup_close_button.stroke({ color: SUCCESS_POPUP_TEXT_COLOR, width: 1 });
+
+  success_popup_close_label.anchor.set(0.5, 0.5);
+  success_popup_close_label.position.set(
+    button_x + SUCCESS_POPUP_BUTTON_WIDTH_PX / 2,
+    button_y + SUCCESS_POPUP_BUTTON_HEIGHT_PX / 2
+  );
+}
+
+/**
+ * Keep solved popup centered on current viewport width.
+ */
+function layout_success_popup() {
+  success_popup_layer.position.set(
+    Math.round((application.screen.width - SUCCESS_POPUP_WIDTH_PX) / 2),
+    SUCCESS_POPUP_MARGIN_TOP_PX
+  );
+}
+
+function hide_success_popup() {
+  success_popup_layer.visible = false;
+}
+
+function show_success_popup() {
+  draw_success_popup();
+  layout_success_popup();
+  success_popup_layer.visible = true;
+}
+
+success_popup_close_button.eventMode = "static";
+success_popup_close_button.cursor = "pointer";
+success_popup_close_button.on("pointertap", () => {
+  hide_success_popup();
+});
+window.addEventListener("resize", () => {
+  layout_success_popup();
+});
 
 /**
  * @param {boolean} next_preview_mode
@@ -535,7 +666,9 @@ async function run_move(direction_sign, anchor_instance) {
   });
 
   tile_renderer.sync_all_from_state(board_state);
-  if (is_solved(board_state)) {
+  if (is_solved(board_state) && !has_shown_solved_notification) {
+    has_shown_solved_notification = true;
+    show_success_popup();
     console.info("Puzzle solved.");
   }
 
@@ -588,7 +721,7 @@ const input_controller = create_input_controller({
    * @param {AnchorInstance} instance
    */
   on_move_request(direction_sign, instance) {
-    if (is_preview_mode) {
+    if (is_preview_mode || success_popup_layer.visible) {
       return;
     }
     void run_move(direction_sign, instance);
