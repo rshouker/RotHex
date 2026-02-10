@@ -640,21 +640,23 @@ async function run_move(direction_sign, anchor_instance) {
 
   const moved_tile_ids = apply_move(board_state, anchor_instance, direction_sign);
   const angle_delta = -anchor_instance.rotation_steps_cw * direction_sign * (Math.PI / 3);
+  const pivot_x = anchor_instance.anchor_world.x;
+  const pivot_y = anchor_instance.anchor_world.y;
 
   await tween_progress(ANIMATION_MS, (progress) => {
+    const theta = angle_delta * progress;
+    const cosine_theta = Math.cos(theta);
+    const sine_theta = Math.sin(theta);
     for (const tile_id of moved_tile_ids) {
       const pose_before = pose_before_by_tile_id.get(tile_id);
       const destination_cell_key = board_state.tile_id_to_cell.get(tile_id);
       if (!pose_before || !destination_cell_key) {
         continue;
       }
-      const [destination_q_text, destination_r_text] = destination_cell_key.split(",");
-      const destination_world = get_cell_world({
-        q: Number(destination_q_text),
-        r: Number(destination_r_text)
-      });
-      const x = pose_before.x + (destination_world.x - pose_before.x) * progress;
-      const y = pose_before.y + (destination_world.y - pose_before.y) * progress;
+      const start_offset_x = pose_before.x - pivot_x;
+      const start_offset_y = pose_before.y - pivot_y;
+      const x = pivot_x + start_offset_x * cosine_theta - start_offset_y * sine_theta;
+      const y = pivot_y + start_offset_x * sine_theta + start_offset_y * cosine_theta;
       const angle = pose_before.angle + angle_delta * progress;
       const tile_view = tile_renderer.tile_views.get(tile_id);
       if (!tile_view) {
