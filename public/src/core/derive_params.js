@@ -174,3 +174,54 @@ export function derive_tile_size(options) {
   };
 }
 
+/**
+ * @typedef {{ x: number, y: number }} WorldPoint
+ */
+
+/**
+ * Derive tile size and board origin when there is no image (e.g. number mode).
+ * Board is centered in the viewport with margin.
+ *
+ * @param {{
+ *   viewport_width: number,
+ *   viewport_height: number,
+ *   grid_w: number,
+ *   grid_h: number,
+ *   padding_in_tile_units: number,
+ *   viewport_margin_px: number
+ * }} options
+ * @param {(tile_size_px: number) => { center_x: number, center_y: number }} get_bounds_center
+ * @returns {{ tile_size_px: number, board_origin: WorldPoint }}
+ */
+export function derive_tile_size_and_origin_viewport_only(options, get_bounds_center) {
+  const usable_viewport_width = Math.max(
+    1,
+    options.viewport_width - 2 * options.viewport_margin_px
+  );
+  const usable_viewport_height = Math.max(
+    1,
+    options.viewport_height - 2 * options.viewport_margin_px
+  );
+  const padded_width_in_s = get_padded_width_in_s(
+    options.grid_w,
+    options.padding_in_tile_units
+  );
+  const padded_height_in_s = get_padded_height_in_s(
+    options.grid_h,
+    options.padding_in_tile_units
+  );
+  const tile_size_px = Math.max(
+    1,
+    Math.min(
+      usable_viewport_width / padded_width_in_s,
+      usable_viewport_height / padded_height_in_s
+    )
+  );
+  const bounds_center = get_bounds_center(tile_size_px);
+  const board_origin = {
+    x: options.viewport_margin_px + usable_viewport_width / 2 - bounds_center.center_x,
+    y: options.viewport_margin_px + usable_viewport_height / 2 - bounds_center.center_y
+  };
+  return { tile_size_px, board_origin };
+}
+

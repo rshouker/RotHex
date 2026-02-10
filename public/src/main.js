@@ -1,8 +1,13 @@
 // @ts-check
 
+import "@fontsource/open-sans/latin-400.css";
 import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import { world_from_cell } from "./core/coords.js";
-import { derive_grid_shape, derive_tile_size } from "./core/derive_params.js";
+import {
+  derive_grid_shape,
+  derive_tile_size,
+  derive_tile_size_and_origin_viewport_only
+} from "./core/derive_params.js";
 import { create_grid, get_grid_bounds } from "./core/grid.js";
 import { apply_move } from "./core/move.js";
 import { build_anchor_instances, get_operator_defs } from "./core/operators.js";
@@ -29,26 +34,79 @@ const PREVIEW_BACKGROUND_ALPHA = 1.0;
 // CHANGE NOTE: runtime gameplay is restricted to vertex3 only.
 // ROLLBACK: include the other operator ids again to re-enable full operator set.
 const ENABLED_OPERATOR_IDS = ["vertex3_120"];
+const NUMBER_MODE_DEFAULT_GRID_H = 3;
+const NUMBER_MODE_DEFAULT_GRID_W = 7;
+const NUMBER_MODE_TILE_FONT_SIZE_RATIO = 0.32;
+const NUMBER_MODE_BACKGROUND_FONT_SIZE_RATIO = 0.5;
+const NUMBER_MODE_BACKGROUND_X_OFFSET_RATIO = -0.44;
+const NUMBER_MODE_TILE_FILL_COLOR = 0x333333;
+const NUMBER_MODE_TILE_FILL_ALPHA = 0.6;
+const FONT_FAMILY = "Open Sans, sans-serif";
 
 /**
- * @param {number} fallback_value
- * @returns {number}
+ * @typedef {{ mode: "n" | "i", grid_w: number, grid_h: number, target_cell_count: number }} UrlParams
  */
-function get_target_cell_count_from_url(fallback_value) {
+
+/**
+ * Parse and validate mode, h, w, n from URL. In number mode n is ignored.
+ * If exactly one of h or w is present, throws.
+ *
+ * @returns {UrlParams}
+ */
+function parse_url_params() {
   const search_params = new URLSearchParams(window.location.search);
+  const mode_param = search_params.get("mode");
+  const mode = mode_param === "i" ? "i" : "n";
+  const h_param = search_params.get("h");
+  const w_param = search_params.get("w");
   const n_param = search_params.get("n");
-  if (!n_param) {
-    return fallback_value;
+
+  if (mode === "n") {
+    const has_h = h_param !== null && h_param !== "";
+    const has_w = w_param !== null && w_param !== "";
+    if (has_h !== has_w) {
+      throw new Error("URL params h and w must both be present or both omitted.");
+    }
+    let grid_w = NUMBER_MODE_DEFAULT_GRID_W;
+    let grid_h = NUMBER_MODE_DEFAULT_GRID_H;
+    if (has_h && has_w) {
+      const parsed_w = Number(w_param);
+      const parsed_h = Number(h_param);
+      if (!Number.isFinite(parsed_w) || !Number.isFinite(parsed_h)) {
+        throw new Error("URL params h and w must be finite numbers.");
+      }
+      grid_w = Math.round(parsed_w);
+      grid_h = Math.round(parsed_h);
+      if (grid_w < 1 || grid_w > 50) {
+        throw new Error("URL param w must be between 1 and 50.");
+      }
+      if (grid_h < 1 || grid_h > 35) {
+        throw new Error("URL param h must be between 1 and 35.");
+      }
+      if (grid_h % 2 === 0) {
+        throw new Error("URL param h (grid height) must be odd.");
+      }
+    }
+    return { mode: "n", grid_w, grid_h, target_cell_count: 0 };
   }
-  const parsed_value = Number(n_param);
-  if (!Number.isFinite(parsed_value)) {
-    return fallback_value;
+
+  // Image mode: derive grid from n (target cell count).
+  let target_cell_count = DEFAULT_TARGET_CELL_COUNT;
+  if (n_param !== null && n_param !== "") {
+    const parsed = Number(n_param);
+    if (Number.isFinite(parsed)) {
+      const rounded = Math.round(parsed);
+      if (rounded >= 7 && rounded <= 400) {
+        target_cell_count = rounded;
+      }
+    }
   }
-  const rounded_value = Math.round(parsed_value);
-  if (rounded_value < 7 || rounded_value > 400) {
-    return fallback_value;
-  }
-  return rounded_value;
+  return {
+    mode: "i",
+    grid_w: 0,
+    grid_h: 0,
+    target_cell_count
+  };
 }
 
 /**
@@ -130,52 +188,146 @@ if (!app_container_element) {
 }
 app_container_element.appendChild(application.canvas);
 
-const source_image = await load_image(IMAGE_PATH);
-const image_aspect = source_image.width / source_image.height;
-const target_cell_count = get_target_cell_count_from_url(DEFAULT_TARGET_CELL_COUNT);
-const grid_derivation = derive_grid_shape({
-  target_cell_count,
-  image_aspect,
-  padding_in_tile_units: PADDING_IN_TILE_UNITS
-});
-const tile_derivation = derive_tile_size({
-  viewport_width: application.screen.width,
-  viewport_height: application.screen.height,
-  image_width: source_image.width,
-  image_height: source_image.height,
-  grid_w: grid_derivation.grid_w,
-  grid_h: grid_derivation.grid_h,
-  padding_in_tile_units: PADDING_IN_TILE_UNITS,
-  viewport_margin_px: VIEWPORT_MARGIN_PX
-});
+const url_params = parse_url_params();
 
-const grid = create_grid(grid_derivation.grid_w, grid_derivation.grid_h);
-const bounds_at_origin = get_grid_bounds(grid, tile_derivation.tile_size_px, { x: 0, y: 0 });
-const board_origin = {
-  x: tile_derivation.image_rect.x + tile_derivation.image_rect.width / 2 - bounds_at_origin.center_x,
-  y: tile_derivation.image_rect.y + tile_derivation.image_rect.height / 2 - bounds_at_origin.center_y
-};
-/**
- * @param {Cell} cell
- * @returns {WorldPoint}
- */
-const get_cell_world = (cell) => world_from_cell(cell, tile_derivation.tile_size_px, board_origin);
+/** @type {"n" | "i"} */
+const game_mode = url_params.mode;
+/** @type {import("./core/grid.js").Grid} */
+let grid;
+/** @type {{ tile_size_px: number, image_rect?: { x: number, y: number, width: number, height: number } }} */
+let tile_derivation;
+/** @type {{ x: number, y: number }} */
+let board_origin;
+/** @type {(cell: Cell) => WorldPoint} */
+let get_cell_world;
+/** @type {Map<string, import("pixi.js").Texture> | null} */
+let tile_textures = null;
+/** @type {Sprite | null} */
+let background_sprite = null;
+/** @type {{ font_family: string, tile_font_size_px: number, tile_fill_color: number, tile_fill_alpha: number } | undefined} */
+let number_mode_style = undefined;
 
 const background_layer = new Container();
-const tile_textures = bake_tile_textures({
-  image: source_image,
-  tile_size_px: tile_derivation.tile_size_px,
-  home_cells: grid.all_cells,
-  get_cell_world,
-  image_rect: tile_derivation.image_rect
-});
 
-const background_sprite = new Sprite(Texture.from(source_image));
-background_sprite.position.set(tile_derivation.image_rect.x, tile_derivation.image_rect.y);
-background_sprite.width = tile_derivation.image_rect.width;
-background_sprite.height = tile_derivation.image_rect.height;
-background_sprite.alpha = NORMAL_BACKGROUND_ALPHA;
-background_layer.addChild(background_sprite);
+if (game_mode === "i") {
+  const source_image = await load_image(IMAGE_PATH);
+  const image_aspect = source_image.width / source_image.height;
+  const grid_derivation = derive_grid_shape({
+    target_cell_count: url_params.target_cell_count,
+    image_aspect,
+    padding_in_tile_units: PADDING_IN_TILE_UNITS
+  });
+  tile_derivation = derive_tile_size({
+    viewport_width: application.screen.width,
+    viewport_height: application.screen.height,
+    image_width: source_image.width,
+    image_height: source_image.height,
+    grid_w: grid_derivation.grid_w,
+    grid_h: grid_derivation.grid_h,
+    padding_in_tile_units: PADDING_IN_TILE_UNITS,
+    viewport_margin_px: VIEWPORT_MARGIN_PX
+  });
+  const image_rect = tile_derivation.image_rect;
+  if (!image_rect) {
+    throw new Error("Image mode requires image_rect.");
+  }
+  grid = create_grid(grid_derivation.grid_w, grid_derivation.grid_h);
+  const bounds_at_origin = get_grid_bounds(
+    grid,
+    tile_derivation.tile_size_px,
+    { x: 0, y: 0 }
+  );
+  board_origin = {
+    x: image_rect.x + image_rect.width / 2 - bounds_at_origin.center_x,
+    y: image_rect.y + image_rect.height / 2 - bounds_at_origin.center_y
+  };
+  get_cell_world = (/** @param {Cell} cell */ cell) =>
+    world_from_cell(cell, tile_derivation.tile_size_px, board_origin);
+
+  tile_textures = bake_tile_textures({
+    image: source_image,
+    tile_size_px: tile_derivation.tile_size_px,
+    home_cells: grid.all_cells,
+    get_cell_world,
+    image_rect
+  });
+
+  background_sprite = new Sprite(Texture.from(source_image));
+  background_sprite.position.set(image_rect.x, image_rect.y);
+  background_sprite.width = image_rect.width;
+  background_sprite.height = image_rect.height;
+  background_sprite.alpha = NORMAL_BACKGROUND_ALPHA;
+  background_layer.addChild(background_sprite);
+} else {
+  grid = create_grid(url_params.grid_w, url_params.grid_h);
+  const viewport_derivation = derive_tile_size_and_origin_viewport_only(
+    {
+      viewport_width: application.screen.width,
+      viewport_height: application.screen.height,
+      grid_w: url_params.grid_w,
+      grid_h: url_params.grid_h,
+      padding_in_tile_units: PADDING_IN_TILE_UNITS,
+      viewport_margin_px: VIEWPORT_MARGIN_PX
+    },
+    (tile_size_px) => {
+      const bounds = get_grid_bounds(grid, tile_size_px, { x: 0, y: 0 });
+      return { center_x: bounds.center_x, center_y: bounds.center_y };
+    }
+  );
+  tile_derivation = {
+    tile_size_px: viewport_derivation.tile_size_px,
+    image_rect: undefined
+  };
+  board_origin = viewport_derivation.board_origin;
+  get_cell_world = (/** @param {Cell} cell */ cell) =>
+    world_from_cell(cell, tile_derivation.tile_size_px, board_origin);
+
+  const tile_font_size_px = Math.max(
+    12,
+    Math.min(
+      32,
+      Math.round(tile_derivation.tile_size_px * NUMBER_MODE_TILE_FONT_SIZE_RATIO)
+    )
+  );
+  number_mode_style = {
+    font_family: FONT_FAMILY,
+    tile_font_size_px,
+    tile_fill_color: NUMBER_MODE_TILE_FILL_COLOR,
+    tile_fill_alpha: NUMBER_MODE_TILE_FILL_ALPHA
+  };
+  const bg_font_size_px = Math.round(
+    tile_font_size_px * NUMBER_MODE_BACKGROUND_FONT_SIZE_RATIO
+  );
+  const bg_x_offset_px =
+    tile_derivation.tile_size_px * NUMBER_MODE_BACKGROUND_X_OFFSET_RATIO;
+  const overline_gap_px = 1;
+  const overline_stroke_px = 1;
+  const bg_color = 0x888888;
+  for (let cell_index = 0; cell_index < grid.all_cells.length; cell_index += 1) {
+    const cell = grid.all_cells[cell_index];
+    const world = get_cell_world(cell);
+    const bg_container = new Container();
+    bg_container.position.set(world.x + bg_x_offset_px, world.y);
+    const bg_label = new Text({
+      text: String(cell_index + 1),
+      style: {
+        fontFamily: FONT_FAMILY,
+        fontSize: bg_font_size_px,
+        fill: bg_color
+      }
+    });
+    bg_label.anchor.set(0.5, 0.5);
+    const line_half = bg_font_size_px * 0.4;
+    const line_y = -bg_font_size_px / 2 - overline_gap_px;
+    const overline_graphics = new Graphics();
+    overline_graphics.moveTo(-line_half, line_y);
+    overline_graphics.lineTo(line_half, line_y);
+    overline_graphics.stroke({ width: overline_stroke_px, color: bg_color });
+    bg_container.addChild(bg_label);
+    bg_container.addChild(overline_graphics);
+    background_layer.addChild(bg_container);
+  }
+}
 
 /** @type {Map<string, AnchorInstance[]>} */
 const instances_by_operator_id = new Map();
@@ -211,12 +363,15 @@ for (let scramble_index = 0; scramble_index < SCRAMBLE_MOVES; scramble_index += 
 }
 
 const tile_renderer = create_tile_views({
-  tile_textures,
+  mode: game_mode,
+  tile_textures: tile_textures ?? new Map(),
+  grid: game_mode === "n" ? grid : null,
   board_state,
   get_cell_world,
   tile_size_px: tile_derivation.tile_size_px,
   border_color: BORDER_COLOR,
-  border_thickness_px: BORDER_THICKNESS_PX
+  border_thickness_px: BORDER_THICKNESS_PX,
+  number_mode_style: number_mode_style
 });
 tile_renderer.sync_all_from_state(board_state);
 
@@ -250,7 +405,11 @@ function apply_preview_mode(next_preview_mode) {
   is_preview_mode = next_preview_mode;
   tile_renderer.tiles_layer.visible = !is_preview_mode;
   pivots_layer.visible = !is_preview_mode;
-  background_sprite.alpha = is_preview_mode ? PREVIEW_BACKGROUND_ALPHA : NORMAL_BACKGROUND_ALPHA;
+  if (background_sprite) {
+    background_sprite.alpha = is_preview_mode
+      ? PREVIEW_BACKGROUND_ALPHA
+      : NORMAL_BACKGROUND_ALPHA;
+  }
 }
 
 /**
@@ -405,6 +564,7 @@ function update_operator_help_text(operator_id) {
 const input_controller = create_input_controller({
   canvas_element: application.canvas,
   pivot_hit_radius_px: Math.max(PIVOT_HIT_RADIUS_MIN_PX, tile_derivation.tile_size_px * 0.33),
+  /** @param {string} operator_id */
   on_operator_change(operator_id) {
     // CHANGE NOTE: block switching to disabled operators at runtime.
     // ROLLBACK: remove this guard to allow normal 1..4 operator switching.
@@ -416,12 +576,17 @@ const input_controller = create_input_controller({
     update_operator_help_text(operator_id);
     redraw_pivot_markers(operator_id);
   },
+  /** @param {AnchorInstance | null} instance */
   on_hover_change(instance) {
     if (interaction_locked) {
       return;
     }
     update_hover_highlight(instance);
   },
+  /**
+   * @param {1 | -1} direction_sign
+   * @param {AnchorInstance} instance
+   */
   on_move_request(direction_sign, instance) {
     if (is_preview_mode) {
       return;

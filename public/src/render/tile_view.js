@@ -1,7 +1,7 @@
 // @ts-check
 
-import { Container, Graphics, Sprite } from "pixi.js";
-import { create_hex_points, parse_cell_key } from "../core/coords.js";
+import { Container, Graphics, Sprite, Text } from "pixi.js";
+import { cell_key, create_hex_points, parse_cell_key } from "../core/coords.js";
 
 /**
  * @typedef {{ q: number, r: number }} Cell
@@ -18,6 +18,15 @@ import { create_hex_points, parse_cell_key } from "../core/coords.js";
  *   tile_rot: Map<string, number>,
  *   tile_home_cell: Map<string, string>
  * }} BoardState
+ */
+
+/**
+ * @typedef {{
+ *   w: number,
+ *   h: number,
+ *   all_cells: Cell[],
+ *   has_cell: (cell: Cell) => boolean
+ * }} Grid
  */
 
 /**
@@ -42,13 +51,32 @@ function draw_border(border_graphics, tile_size_px, color, border_thickness_px) 
 }
 
 /**
+ * Draw a hex fill (for number-mode tiles).
+ *
+ * @param {Graphics} graphics
+ * @param {number} tile_size_px
+ * @param {number} fill_color
+ * @param {number} alpha
+ */
+function draw_hex_fill(graphics, tile_size_px, fill_color, alpha) {
+  const hex_points = create_hex_points(tile_size_px);
+  const flattened_points = hex_points.flatMap((point) => [point.x, point.y]);
+  graphics.clear();
+  graphics.poly(flattened_points);
+  graphics.fill({ color: fill_color, alpha });
+}
+
+/**
  * @param {{
+ *   mode: "n" | "i",
  *   tile_textures: Map<string, import("pixi.js").Texture>,
+ *   grid: Grid | null,
  *   board_state: BoardState,
  *   get_cell_world: (cell: Cell) => WorldPoint,
  *   tile_size_px: number,
  *   border_color: number,
- *   border_thickness_px: number
+ *   border_thickness_px: number,
+ *   number_mode_style?: { font_family: string, tile_font_size_px: number, tile_fill_color: number, tile_fill_alpha: number }
  * }} options
  * @returns {{
  *   tiles_layer: Container,
@@ -65,17 +93,80 @@ export function create_tile_views(options) {
   /** @type {Map<string, TileView>} */
   const tile_views = new Map();
 
-  for (const [tile_id, texture] of options.tile_textures.entries()) {
-    const container = new Container();
-    const sprite = new Sprite(texture);
-    sprite.anchor.set(0.5, 0.5);
-    const border = new Graphics();
-    draw_border(border, options.tile_size_px, options.border_color, options.border_thickness_px);
+  if (options.mode === "n" && options.grid) {
+    const style = options.number_mode_style ?? {
+      font_family: "Open Sans, sans-serif",
+      tile_font_size_px: Math.max(12, Math.min(32, Math.round(options.tile_size_px * 0.32))),
+      tile_fill_color: 0x333333,
+      tile_fill_alpha: 0.6
+    };
+    const overline_gap_px = 2;
+    const overline_height_px = 1;
+    const overline_width_ratio = 0.6;
 
-    container.addChild(sprite);
-    container.addChild(border);
-    tiles_layer.addChild(container);
-    tile_views.set(tile_id, { container, border });
+    for (let cell_index = 0; cell_index < options.grid.all_cells.length; cell_index += 1) {
+      const cell = options.grid.all_cells[cell_index];
+      const tile_id = cell_key(cell);
+      const display_number = cell_index + 1;
+
+      const container = new Container();
+      const hex_fill = new Graphics();
+      draw_hex_fill(
+        hex_fill,
+        options.tile_size_px,
+        style.tile_fill_color,
+        style.tile_fill_alpha
+      );
+      const label_text = new Text({
+        text: String(display_number),
+        style: {
+          fontFamily: style.font_family,
+          fontSize: style.tile_font_size_px,
+          fill: 0xffffff
+        }
+      });
+      label_text.anchor.set(0.5, 0.5);
+
+      const overline = new Graphics();
+      const text_half_width = style.tile_font_size_px * 0.65 * overline_width_ratio;
+      const line_y = -style.tile_font_size_px / 2 - overline_gap_px;
+      overline.moveTo(-text_half_width, line_y);
+      overline.lineTo(text_half_width, line_y);
+      overline.stroke({ width: overline_height_px, color: 0xffffff });
+
+      const border = new Graphics();
+      draw_border(
+        border,
+        options.tile_size_px,
+        options.border_color,
+        options.border_thickness_px
+      );
+
+      container.addChild(hex_fill);
+      container.addChild(label_text);
+      container.addChild(overline);
+      container.addChild(border);
+      tiles_layer.addChild(container);
+      tile_views.set(tile_id, { container, border });
+    }
+  } else {
+    for (const [tile_id, texture] of options.tile_textures.entries()) {
+      const container = new Container();
+      const sprite = new Sprite(texture);
+      sprite.anchor.set(0.5, 0.5);
+      const border = new Graphics();
+      draw_border(
+        border,
+        options.tile_size_px,
+        options.border_color,
+        options.border_thickness_px
+      );
+
+      container.addChild(sprite);
+      container.addChild(border);
+      tiles_layer.addChild(container);
+      tile_views.set(tile_id, { container, border });
+    }
   }
 
   /**
