@@ -103,9 +103,9 @@ export function create_input_controller(options) {
       return;
     }
     if (pointer_event.button === 0) {
-      options.on_move_request(1, hover_instance);
-    } else if (pointer_event.button === 2) {
       options.on_move_request(-1, hover_instance);
+    } else if (pointer_event.button === 2) {
+      options.on_move_request(1, hover_instance);
     }
   });
 
