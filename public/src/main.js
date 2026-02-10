@@ -26,6 +26,9 @@ const PIVOT_MARKER_COLOR = 0xffd966;
 const PIVOT_MARKER_RADIUS_PX = 4;
 const NORMAL_BACKGROUND_ALPHA = 0.75;
 const PREVIEW_BACKGROUND_ALPHA = 1.0;
+// CHANGE NOTE: runtime gameplay is restricted to vertex3 only.
+// ROLLBACK: include the other operator ids again to re-enable full operator set.
+const ENABLED_OPERATOR_IDS = ["vertex3_120"];
 
 /**
  * @param {number} fallback_value
@@ -176,7 +179,11 @@ background_layer.addChild(background_sprite);
 
 /** @type {Map<string, AnchorInstance[]>} */
 const instances_by_operator_id = new Map();
-for (const operator_def of get_operator_defs()) {
+// CHANGE NOTE: previously we built instances for all operators from get_operator_defs().
+// ROLLBACK: remove this filter and iterate all operator defs directly.
+for (const operator_def of get_operator_defs().filter((operator_def) =>
+  ENABLED_OPERATOR_IDS.includes(operator_def.id)
+)) {
   instances_by_operator_id.set(
     operator_def.id,
     build_anchor_instances(grid, operator_def.id, get_cell_world, tile_derivation.tile_size_px)
@@ -184,9 +191,16 @@ for (const operator_def of get_operator_defs()) {
 }
 
 const board_state = create_solved_state(grid);
+// CHANGE NOTE: scramble now samples from ENABLED_OPERATOR_IDS only.
+// ROLLBACK: use Array.from(instances_by_operator_id.keys()) to sample all active operators.
+const scramble_operator_ids = ENABLED_OPERATOR_IDS.filter((operator_id) =>
+  instances_by_operator_id.has(operator_id)
+);
 for (let scramble_index = 0; scramble_index < SCRAMBLE_MOVES; scramble_index += 1) {
-  const operator_ids = Array.from(instances_by_operator_id.keys());
-  const random_operator_id = operator_ids[random_int(0, operator_ids.length - 1)];
+  if (scramble_operator_ids.length === 0) {
+    break;
+  }
+  const random_operator_id = scramble_operator_ids[random_int(0, scramble_operator_ids.length - 1)];
   const operator_instances = instances_by_operator_id.get(random_operator_id) ?? [];
   if (operator_instances.length === 0) {
     continue;
@@ -385,13 +399,18 @@ function update_operator_help_text(operator_id) {
   ];
   operator_help_text.text =
     `Operator: ${selected_operator_label}\n` +
-    "Switch operator: keyboard 1/2/3/4 | Space: image preview | Left click: CW | Right click: CCW";
+    "Switch operator: only 4 enabled (vertex3_120) | Space: image preview | Left click: CW | Right click: CCW";
 }
 
 const input_controller = create_input_controller({
   canvas_element: application.canvas,
   pivot_hit_radius_px: Math.max(PIVOT_HIT_RADIUS_MIN_PX, tile_derivation.tile_size_px * 0.33),
   on_operator_change(operator_id) {
+    // CHANGE NOTE: block switching to disabled operators at runtime.
+    // ROLLBACK: remove this guard to allow normal 1..4 operator switching.
+    if (!ENABLED_OPERATOR_IDS.includes(operator_id)) {
+      return;
+    }
     const instances = instances_by_operator_id.get(operator_id) ?? [];
     input_controller.set_instances(instances);
     update_operator_help_text(operator_id);
@@ -411,9 +430,11 @@ const input_controller = create_input_controller({
   }
 });
 
-input_controller.set_instances(instances_by_operator_id.get("ring6_60") ?? []);
-update_operator_help_text("ring6_60");
-redraw_pivot_markers("ring6_60");
+// CHANGE NOTE: initial operator is forced to vertex3_120 in restricted mode.
+// ROLLBACK: restore previous ring6_60 initialization if full set is re-enabled.
+input_controller.set_instances(instances_by_operator_id.get("vertex3_120") ?? []);
+update_operator_help_text("vertex3_120");
+redraw_pivot_markers("vertex3_120");
 
 window.addEventListener("keydown", (keyboard_event) => {
   if (keyboard_event.code !== "Space") {

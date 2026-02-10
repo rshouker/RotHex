@@ -25,6 +25,9 @@
  * }}
  */
 export function create_input_controller(options) {
+  // CHANGE NOTE: input-side restriction to vertex3 only.
+  // ROLLBACK: include all operator ids or remove this allowlist check in on_keydown.
+  const enabled_operator_ids = ["vertex3_120"];
   /** @type {AnchorInstance[]} */
   let active_instances = [];
   /** @type {AnchorInstance | null} */
@@ -144,6 +147,9 @@ export function create_input_controller(options) {
    */
   function on_keydown(keyboard_event) {
     const operator_id = get_operator_id_from_keyboard_event(keyboard_event);
+    if (operator_id && !enabled_operator_ids.includes(operator_id)) {
+      return;
+    }
     if (!operator_id || operator_id === selected_operator_id) {
       return;
     }
