@@ -1,6 +1,5 @@
 // @ts-check
 
-import "@fontsource/open-sans/latin-400.css";
 import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import { world_from_cell } from "./core/coords.js";
 import {

@@ -2,6 +2,11 @@ name: Deploy public to GitHub Pages
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to deploy (leave empty to use the branch you trigger from)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -18,6 +23,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -30,9 +37,9 @@ jobs:
         working-directory: public
         run: npm ci
 
-      - name: Build site
+      - name: Prepare web modules
         working-directory: public
-        run: npm run build -- --base "/${{ github.event.repository.name }}/"
+        run: npm run prepare-modules
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -40,7 +47,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: public/dist
+          path: public
 
       - name: Deploy to GitHub Pages
         id: deployment
