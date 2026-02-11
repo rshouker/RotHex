@@ -2,6 +2,7 @@
 
 import { Container, Graphics, Sprite, Text } from "pixi.js";
 import { cell_key, create_hex_points, parse_cell_key } from "../core/coords.js";
+import { cell_to_label } from "../core/cell_label.js";
 
 /**
  * @typedef {{ q: number, r: number }} Cell
@@ -107,7 +108,7 @@ export function create_tile_views(options) {
     for (let cell_index = 0; cell_index < options.grid.all_cells.length; cell_index += 1) {
       const cell = options.grid.all_cells[cell_index];
       const tile_id = cell_key(cell);
-      const display_number = cell_index + 1;
+      const display_label = cell_to_label(cell);
 
       const container = new Container();
       const hex_fill = new Graphics();
@@ -118,7 +119,7 @@ export function create_tile_views(options) {
         style.tile_fill_alpha
       );
       const label_text = new Text({
-        text: String(display_number),
+        text: display_label,
         style: {
           fontFamily: style.font_family,
           fontSize: style.tile_font_size_px,

@@ -1,6 +1,7 @@
 // @ts-check
 
 import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
+import { cell_to_label } from "./core/cell_label.js";
 import { world_from_cell } from "./core/coords.js";
 import {
   derive_grid_shape,
@@ -329,7 +330,7 @@ if (game_mode === "i") {
     const bg_container = new Container();
     bg_container.position.set(world.x + bg_x_offset_px, world.y);
     const bg_label = new Text({
-      text: String(cell_index + 1),
+      text: cell_to_label(cell),
       style: {
         fontFamily: FONT_FAMILY,
         fontSize: bg_font_size_px,
