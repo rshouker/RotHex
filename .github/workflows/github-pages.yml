@@ -2,11 +2,6 @@ name: Deploy public to GitHub Pages
 
 on:
   workflow_dispatch:
-    inputs:
-      branch:
-        description: "Branch to deploy (leave empty to use the branch you trigger from)"
-        required: false
-        default: ""
 
 permissions:
   contents: read
@@ -24,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
+          ref: main
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
