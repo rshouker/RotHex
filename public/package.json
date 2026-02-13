@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@fontsource/open-sans": "^5.2.7",
-    "pixi.js": "^8.13.2"
+    "pixi.js": "8.13.2"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
