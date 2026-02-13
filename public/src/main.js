@@ -2,7 +2,7 @@
 
 import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import { cell_to_label } from "./core/cell_label.js";
-import { world_from_cell } from "./core/coords.js";
+import { create_hex_points, world_from_cell } from "./core/coords.js";
 import {
   derive_grid_shape,
   derive_tile_size,
@@ -26,9 +26,14 @@ const ANIMATION_MS = 180;
 const BORDER_THICKNESS_PX = 2;
 const BORDER_COLOR = 0xe6e6e6;
 const HOVER_HIGHLIGHT_COLOR = 0x26d6ff;
+const HOVER_OUTLINE_THICKNESS_PX = 4;
+const HOVER_OUTLINE_EDGE_KEY_PRECISION = 3;
 const OPERATOR_LABEL_COLOR = 0xffffff;
-const PIVOT_MARKER_COLOR = 0xffd966;
-const PIVOT_MARKER_RADIUS_PX = 4;
+const PIVOT_MARKER_INNER_RADIUS_PX = 4;
+const PIVOT_MARKER_STROKE_WIDTH_PX = 1;
+const PIVOT_MARKER_FILL_COLOR = 0xffffff;
+const PIVOT_MARKER_STROKE_COLOR = 0x000000;
+const PIVOT_MARKER_ALPHA = 1.0;
 const NORMAL_BACKGROUND_ALPHA = 0.75;
 const PREVIEW_BACKGROUND_ALPHA = 1.0;
 // CHANGE NOTE: runtime gameplay is restricted to vertex3 only.
@@ -400,6 +405,8 @@ tile_renderer.sync_all_from_state(board_state);
 
 application.stage.addChild(background_layer);
 application.stage.addChild(tile_renderer.tiles_layer);
+const hover_outline_graphics = new Graphics();
+application.stage.addChild(hover_outline_graphics);
 const pivots_layer = new Container();
 application.stage.addChild(pivots_layer);
 
@@ -535,21 +542,12 @@ window.addEventListener("resize", () => {
 function apply_preview_mode(next_preview_mode) {
   is_preview_mode = next_preview_mode;
   tile_renderer.tiles_layer.visible = !is_preview_mode;
+  hover_outline_graphics.visible = !is_preview_mode;
   pivots_layer.visible = !is_preview_mode;
   if (background_sprite) {
     background_sprite.alpha = is_preview_mode
       ? PREVIEW_BACKGROUND_ALPHA
       : NORMAL_BACKGROUND_ALPHA;
-  }
-}
-
-/**
- * @param {Iterable<string>} tile_ids
- * @param {number} color
- */
-function set_border_color_for_tiles(tile_ids, color) {
-  for (const tile_id of tile_ids) {
-    tile_renderer.set_border_color(tile_id, color);
   }
 }
 
@@ -583,15 +581,100 @@ function collect_highlight_tile_ids(instance) {
 }
 
 /**
+ * Convert world point numbers to a stable string token for edge keys.
+ *
+ * @param {number} value
+ * @returns {string}
+ */
+function quantize_outline_value(value) {
+  return value.toFixed(HOVER_OUTLINE_EDGE_KEY_PRECISION);
+}
+
+/**
+ * Build an orientation-independent key for an undirected edge.
+ *
+ * @param {WorldPoint} edge_start
+ * @param {WorldPoint} edge_end
+ * @returns {string}
+ */
+function create_outline_edge_key(edge_start, edge_end) {
+  const start_key =
+    `${quantize_outline_value(edge_start.x)},${quantize_outline_value(edge_start.y)}`;
+  const end_key =
+    `${quantize_outline_value(edge_end.x)},${quantize_outline_value(edge_end.y)}`;
+  return start_key < end_key ? `${start_key}|${end_key}` : `${end_key}|${start_key}`;
+}
+
+/**
+ * Draw only the outside perimeter of the hovered cell set.
+ *
+ * @param {AnchorInstance | null} instance
+ */
+function redraw_hover_outline(instance) {
+  hover_outline_graphics.clear();
+  if (!instance) {
+    return;
+  }
+
+  /**
+   * @typedef {{ start: WorldPoint, end: WorldPoint, count: number }} OutlineEdgeRecord
+   */
+  /** @type {Map<string, OutlineEdgeRecord>} */
+  const edge_records_by_key = new Map();
+  const selected_cell_key_set = new Set(instance.cells);
+  const hex_points = create_hex_points(tile_derivation.tile_size_px);
+  for (const selected_cell_key of selected_cell_key_set) {
+    const [q_text, r_text] = selected_cell_key.split(",");
+    const selected_cell = { q: Number(q_text), r: Number(r_text) };
+    const selected_cell_world = get_cell_world(selected_cell);
+    for (let direction_index = 0; direction_index < 6; direction_index += 1) {
+      const start_corner = hex_points[direction_index];
+      const end_corner = hex_points[(direction_index + 1) % 6];
+      const edge_start = {
+        x: selected_cell_world.x + start_corner.x,
+        y: selected_cell_world.y + start_corner.y
+      };
+      const edge_end = {
+        x: selected_cell_world.x + end_corner.x,
+        y: selected_cell_world.y + end_corner.y
+      };
+      const edge_key = create_outline_edge_key(edge_start, edge_end);
+      const existing_record = edge_records_by_key.get(edge_key);
+      if (existing_record) {
+        existing_record.count += 1;
+      } else {
+        edge_records_by_key.set(edge_key, {
+          start: edge_start,
+          end: edge_end,
+          count: 1
+        });
+      }
+    }
+  }
+
+  // Only edges that appear once belong to the outer perimeter.
+  for (const edge_record of edge_records_by_key.values()) {
+    if (edge_record.count !== 1) {
+      continue;
+    }
+    hover_outline_graphics.moveTo(edge_record.start.x, edge_record.start.y);
+    hover_outline_graphics.lineTo(edge_record.end.x, edge_record.end.y);
+  }
+  hover_outline_graphics.stroke({
+    width: HOVER_OUTLINE_THICKNESS_PX,
+    color: HOVER_HIGHLIGHT_COLOR
+  });
+}
+
+/**
  * @param {AnchorInstance | null} next_hovered_instance
  */
 function update_hover_highlight(next_hovered_instance) {
-  set_border_color_for_tiles(highlighted_tile_ids, BORDER_COLOR);
   set_tile_emphasis(highlighted_tile_ids, false);
   hovered_instance = next_hovered_instance;
   highlighted_tile_ids = collect_highlight_tile_ids(hovered_instance);
   set_tile_emphasis(highlighted_tile_ids, true);
-  set_border_color_for_tiles(highlighted_tile_ids, HOVER_HIGHLIGHT_COLOR);
+  redraw_hover_outline(hovered_instance);
 }
 
 /**
@@ -602,8 +685,12 @@ function redraw_pivot_markers(operator_id) {
   const instances = instances_by_operator_id.get(operator_id) ?? [];
   for (const instance of instances) {
     const pivot_marker = new Graphics();
-    pivot_marker.circle(0, 0, PIVOT_MARKER_RADIUS_PX);
-    pivot_marker.fill({ color: PIVOT_MARKER_COLOR, alpha: 0.55 });
+    // Outer circle (black stroke/ring)
+    pivot_marker.circle(0, 0, PIVOT_MARKER_INNER_RADIUS_PX + PIVOT_MARKER_STROKE_WIDTH_PX);
+    pivot_marker.fill({ color: PIVOT_MARKER_STROKE_COLOR });
+    // Inner circle (white fill)
+    pivot_marker.circle(0, 0, PIVOT_MARKER_INNER_RADIUS_PX);
+    pivot_marker.fill({ color: PIVOT_MARKER_FILL_COLOR, alpha: PIVOT_MARKER_ALPHA });
     pivot_marker.position.set(instance.anchor_world.x, instance.anchor_world.y);
     pivots_layer.addChild(pivot_marker);
   }
@@ -709,6 +796,7 @@ const input_controller = create_input_controller({
     const instances = instances_by_operator_id.get(operator_id) ?? [];
     input_controller.set_instances(instances);
     update_operator_help_text(operator_id);
+    update_hover_highlight(null);
     redraw_pivot_markers(operator_id);
   },
   /** @param {AnchorInstance | null} instance */
