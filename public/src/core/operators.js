@@ -65,12 +65,8 @@ function all_cells_exist(grid, cells) {
  * @returns {OperatorDef[]}
  */
 export function get_operator_defs() {
-  // CHANGE NOTE (ring6): now uses 120° spin (rotation_steps_cw: 2).
-  // ROLLBACK: set this back to rotation_steps_cw: 1 for ring6.
   return [
-    { id: "ring6_60", rotation_steps_cw: 2 },
-    { id: "alt3_even_120", rotation_steps_cw: 2 },
-    { id: "alt3_odd_120", rotation_steps_cw: 2 },
+    { id: "adjacent2_180", rotation_steps_cw: 3 },
     { id: "vertex3_120", rotation_steps_cw: 2 }
   ];
 }
@@ -83,14 +79,8 @@ export function get_operator_defs() {
  * @returns {AnchorInstance[]}
  */
 export function build_anchor_instances(grid, operator_id, get_cell_world, tile_size_px) {
-  if (operator_id === "ring6_60") {
-    return build_cell_operator_instances(grid, operator_id, [0, 1, 2, 3, 4, 5], 2, get_cell_world);
-  }
-  if (operator_id === "alt3_even_120") {
-    return build_cell_operator_instances(grid, operator_id, [0, 2, 4], 2, get_cell_world);
-  }
-  if (operator_id === "alt3_odd_120") {
-    return build_cell_operator_instances(grid, operator_id, [1, 3, 5], 2, get_cell_world);
+  if (operator_id === "adjacent2_180") {
+    return build_adjacent_edge_instances(grid, get_cell_world);
   }
   if (operator_id === "vertex3_120") {
     return build_vertex_instances(grid, get_cell_world, tile_size_px);
@@ -135,6 +125,46 @@ function build_cell_operator_instances(
       permutation_steps_cw,
       rotation_steps_cw
     });
+  }
+  return instances;
+}
+
+/**
+ * @param {Grid} grid
+ * @param {(cell: Cell) => WorldPoint} get_cell_world
+ * @returns {AnchorInstance[]}
+ */
+function build_adjacent_edge_instances(grid, get_cell_world) {
+  /** @type {AnchorInstance[]} */
+  const instances = [];
+  const dedup_anchor_ids = new Set();
+  for (const anchor_cell of grid.all_cells) {
+    for (let direction_index = 0; direction_index < 6; direction_index += 1) {
+      const neighbor = neighbor_cell(anchor_cell, direction_index);
+      if (!all_cells_exist(grid, [anchor_cell, neighbor])) {
+        continue;
+      }
+      const cell_a_key = cell_key(anchor_cell);
+      const cell_b_key = cell_key(neighbor);
+      const sorted_cell_keys = [cell_a_key, cell_b_key].sort();
+      const anchor_id = `edge:${sorted_cell_keys.join("|")}`;
+      if (dedup_anchor_ids.has(anchor_id)) {
+        continue;
+      }
+      dedup_anchor_ids.add(anchor_id);
+      const anchor_cell_world = get_cell_world(anchor_cell);
+      const neighbor_world = get_cell_world(neighbor);
+      instances.push({
+        operator_id: "adjacent2_180",
+        anchor_id,
+        anchor_world: {
+          x: (anchor_cell_world.x + neighbor_world.x) / 2,
+          y: (anchor_cell_world.y + neighbor_world.y) / 2
+        },
+        cells: [cell_a_key, cell_b_key],
+        rotation_steps_cw: 3
+      });
+    }
   }
   return instances;
 }

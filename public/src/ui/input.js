@@ -14,6 +14,8 @@
  * @param {{
  *   canvas_element: HTMLCanvasElement,
  *   pivot_hit_radius_px: number,
+ *   allowed_operator_ids: string[],
+ *   initial_operator_id: string,
  *   on_operator_change: (operator_id: string) => void,
  *   on_hover_change: (hover_instance: AnchorInstance | null) => void,
  *   on_move_request: (direction_sign: 1 | -1, hover_instance: AnchorInstance) => void
@@ -25,9 +27,6 @@
  * }}
  */
 export function create_input_controller(options) {
-  // CHANGE NOTE: input-side restriction to vertex3 only.
-  // ROLLBACK: include all operator ids or remove this allowlist check in on_keydown.
-  const enabled_operator_ids = ["vertex3_120"];
   /** @type {AnchorInstance[]} */
   let active_instances = [];
   /** @type {AnchorInstance | null} */
@@ -35,7 +34,7 @@ export function create_input_controller(options) {
   /** @type {{ x: number, y: number } | null} */
   let last_pointer_world = null;
   let interaction_locked = false;
-  let selected_operator_id = "ring6_60";
+  let selected_operator_id = options.initial_operator_id;
 
   /**
    * @param {PointerEvent} pointer_event
@@ -114,32 +113,15 @@ export function create_input_controller(options) {
    * @returns {string | undefined}
    */
   function get_operator_id_from_keyboard_event(keyboard_event) {
-    const code_to_operator_id = {
-      Digit1: "ring6_60",
-      Digit2: "alt3_even_120",
-      Digit3: "alt3_odd_120",
-      Digit4: "vertex3_120",
-      Numpad1: "ring6_60",
-      Numpad2: "alt3_even_120",
-      Numpad3: "alt3_odd_120",
-      Numpad4: "vertex3_120"
-    };
-    const key_to_operator_id = {
-      "1": "ring6_60",
-      "2": "alt3_even_120",
-      "3": "alt3_odd_120",
-      "4": "vertex3_120"
-    };
-    const by_code =
-      code_to_operator_id[
-        /** @type {"Digit1" | "Digit2" | "Digit3" | "Digit4" | "Numpad1" | "Numpad2" | "Numpad3" | "Numpad4"} */ (
-          keyboard_event.code
-        )
-      ];
-    if (by_code) {
-      return by_code;
+    let operator_index = -1;
+    if (/^Digit[1-9]$/.test(keyboard_event.code)) {
+      operator_index = Number(keyboard_event.code.slice("Digit".length)) - 1;
+    } else if (/^Numpad[1-9]$/.test(keyboard_event.code)) {
+      operator_index = Number(keyboard_event.code.slice("Numpad".length)) - 1;
+    } else if (/^[1-9]$/.test(keyboard_event.key)) {
+      operator_index = Number(keyboard_event.key) - 1;
     }
-    return key_to_operator_id[/** @type {"1" | "2" | "3" | "4"} */ (keyboard_event.key)];
+    return options.allowed_operator_ids[operator_index];
   }
 
   /**
@@ -147,9 +129,6 @@ export function create_input_controller(options) {
    */
   function on_keydown(keyboard_event) {
     const operator_id = get_operator_id_from_keyboard_event(keyboard_event);
-    if (operator_id && !enabled_operator_ids.includes(operator_id)) {
-      return;
-    }
     if (!operator_id || operator_id === selected_operator_id) {
       return;
     }
