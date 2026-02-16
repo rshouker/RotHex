@@ -23,14 +23,10 @@ const PADDING_IN_TILE_UNITS = 0.5;
 const VIEWPORT_MARGIN_PX = 24;
 const PIVOT_HIT_RADIUS_MIN_PX = 10;
 const ANIMATION_MS = 180;
-const BORDER_THICKNESS_PX = 3;
 const BORDER_COLOR = 0xe6e6e6;
 const HOVER_HIGHLIGHT_COLOR = 0x26d6ff;
-const HOVER_OUTLINE_THICKNESS_PX = 4;
 const HOVER_OUTLINE_EDGE_KEY_PRECISION = 3;
 const OPERATOR_LABEL_COLOR = 0xffffff;
-const PIVOT_MARKER_INNER_RADIUS_PX = 5;
-const PIVOT_MARKER_STROKE_WIDTH_PX = 2;
 const PIVOT_MARKER_FILL_COLOR = 0xffff00;
 const PIVOT_MARKER_STROKE_COLOR = 0x000000;
 const PIVOT_MARKER_ALPHA = 1.0;
@@ -38,8 +34,6 @@ const NORMAL_BACKGROUND_ALPHA = 0.75;
 const PREVIEW_BACKGROUND_ALPHA = 1.0;
 const NUMBER_MODE_DEFAULT_GRID_H = 3;
 const NUMBER_MODE_DEFAULT_GRID_W = 7;
-const NUMBER_MODE_TILE_FONT_SIZE_RATIO = 0.32;
-const NUMBER_MODE_BACKGROUND_FONT_SIZE_RATIO = 0.5;
 const NUMBER_MODE_BACKGROUND_X_OFFSET_RATIO = -0.44;
 const NUMBER_MODE_TILE_FILL_COLOR = 0x333333;
 const NUMBER_MODE_TILE_FILL_ALPHA = 0.6;
@@ -55,6 +49,164 @@ const SUCCESS_POPUP_BUTTON_TEXT_COLOR = 0xffffff;
 const SUCCESS_POPUP_BUTTON_WIDTH_PX = 96;
 const SUCCESS_POPUP_BUTTON_HEIGHT_PX = 34;
 const SUCCESS_POPUP_CORNER_RADIUS_PX = 12;
+
+/**
+ * Relative sizing tuning section.
+ * Values scale from min(grid_confines_rect.width, grid_confines_rect.height).
+ *
+ * @typedef {{ ratio: number, min_px: number, max_px?: number }} RelativeSizeRule
+ */
+
+/**
+ * @typedef {{
+ *   border_thickness: RelativeSizeRule,
+ *   hover_outline_thickness: RelativeSizeRule,
+ *   pivot_marker_inner_radius: RelativeSizeRule,
+ *   pivot_marker_stroke_width: RelativeSizeRule,
+ *   pivot_hit_radius: RelativeSizeRule,
+ *   number_mode_tile_font_size: RelativeSizeRule,
+ *   number_mode_background_font_size: RelativeSizeRule,
+ *   operator_help_font_size: RelativeSizeRule,
+ *   success_popup_title_font_size: RelativeSizeRule,
+ *   success_popup_message_font_size: RelativeSizeRule,
+ *   success_popup_button_font_size: RelativeSizeRule
+ * }} RelativeSizeRuleSet
+ */
+
+/** @type {RelativeSizeRuleSet} */
+const RELATIVE_SIZE_RULES = {
+  border_thickness: { ratio: 0.0035, min_px: 1 },
+  hover_outline_thickness: { ratio: 0.0047, min_px: 2 },
+  pivot_marker_inner_radius: { ratio: 0.0058, min_px: 2 },
+  pivot_marker_stroke_width: { ratio: 0.0023, min_px: 1 },
+  pivot_hit_radius: { ratio: 0.012, min_px: Math.max(2, PIVOT_HIT_RADIUS_MIN_PX) },
+  number_mode_tile_font_size: { ratio: 0.03, min_px: 12, max_px: 32 },
+  number_mode_background_font_size: { ratio: 0.015, min_px: 8, max_px: 24 },
+  operator_help_font_size: { ratio: 0.024, min_px: 12, max_px: 36 },
+  success_popup_title_font_size: { ratio: 0.032, min_px: 14, max_px: 44 },
+  success_popup_message_font_size: { ratio: 0.017, min_px: 10, max_px: 24 },
+  success_popup_button_font_size: { ratio: 0.016, min_px: 10, max_px: 24 }
+};
+
+/**
+ * @typedef {{
+ *   border_thickness_px: number,
+ *   hover_outline_thickness_px: number,
+ *   pivot_marker_inner_radius_px: number,
+ *   pivot_marker_stroke_width_px: number,
+ *   pivot_hit_radius_px: number,
+ *   number_mode_tile_font_size_px: number,
+ *   number_mode_background_font_size_px: number,
+ *   operator_help_font_size_px: number,
+ *   success_popup_title_font_size_px: number,
+ *   success_popup_message_font_size_px: number,
+ *   success_popup_button_font_size_px: number
+ * }} ResolvedRelativeSizes
+ */
+
+/**
+ * Compute one relative pixel value with explicit clamp diagnostics.
+ *
+ * @param {number} reference_size_px
+ * @param {RelativeSizeRule} rule
+ * @param {string} context_label
+ * @returns {number}
+ */
+function compute_relative_size_px(reference_size_px, rule, context_label) {
+  const raw_size_px = reference_size_px * rule.ratio;
+  const max_px = rule.max_px ?? Number.POSITIVE_INFINITY;
+  const clamped_size_px = Math.max(rule.min_px, Math.min(raw_size_px, max_px));
+  const resolved_size_px = Math.round(clamped_size_px);
+  console.info("[Relative size] Calculation:", {
+    context: context_label,
+    reference_size_px,
+    ratio: rule.ratio,
+    raw_size_px,
+    min_px: rule.min_px,
+    max_px: Number.isFinite(max_px) ? max_px : null,
+    clamped_size_px,
+    resolved_size_px
+  });
+  return resolved_size_px;
+}
+
+/**
+ * Resolve all runtime visual sizes from a confining rect.
+ *
+ * @param {{ x: number, y: number, width: number, height: number }} grid_confines_rect
+ * @param {string} reason_label
+ * @returns {ResolvedRelativeSizes}
+ */
+function resolve_relative_sizes(grid_confines_rect, reason_label) {
+  const reference_size_px = Math.min(grid_confines_rect.width, grid_confines_rect.height);
+  console.info("[Relative size] Source confinement:", {
+    reason: reason_label,
+    grid_confines_rect,
+    reference_size_px
+  });
+  const resolved_sizes = {
+    border_thickness_px: compute_relative_size_px(
+      reference_size_px,
+      RELATIVE_SIZE_RULES.border_thickness,
+      "border_thickness_px"
+    ),
+    hover_outline_thickness_px: compute_relative_size_px(
+      reference_size_px,
+      RELATIVE_SIZE_RULES.hover_outline_thickness,
+      "hover_outline_thickness_px"
+    ),
+    pivot_marker_inner_radius_px: compute_relative_size_px(
+      reference_size_px,
+      RELATIVE_SIZE_RULES.pivot_marker_inner_radius,
+      "pivot_marker_inner_radius_px"
+    ),
+    pivot_marker_stroke_width_px: compute_relative_size_px(
+      reference_size_px,
+      RELATIVE_SIZE_RULES.pivot_marker_stroke_width,
+      "pivot_marker_stroke_width_px"
+    ),
+    pivot_hit_radius_px: compute_relative_size_px(
+      reference_size_px,
+      RELATIVE_SIZE_RULES.pivot_hit_radius,
+      "pivot_hit_radius_px"
+    ),
+    number_mode_tile_font_size_px: compute_relative_size_px(
+      reference_size_px,
+      RELATIVE_SIZE_RULES.number_mode_tile_font_size,
+      "number_mode_tile_font_size_px"
+    ),
+    number_mode_background_font_size_px: compute_relative_size_px(
+      reference_size_px,
+      RELATIVE_SIZE_RULES.number_mode_background_font_size,
+      "number_mode_background_font_size_px"
+    ),
+    operator_help_font_size_px: compute_relative_size_px(
+      reference_size_px,
+      RELATIVE_SIZE_RULES.operator_help_font_size,
+      "operator_help_font_size_px"
+    ),
+    success_popup_title_font_size_px: compute_relative_size_px(
+      reference_size_px,
+      RELATIVE_SIZE_RULES.success_popup_title_font_size,
+      "success_popup_title_font_size_px"
+    ),
+    success_popup_message_font_size_px: compute_relative_size_px(
+      reference_size_px,
+      RELATIVE_SIZE_RULES.success_popup_message_font_size,
+      "success_popup_message_font_size_px"
+    ),
+    success_popup_button_font_size_px: compute_relative_size_px(
+      reference_size_px,
+      RELATIVE_SIZE_RULES.success_popup_button_font_size,
+      "success_popup_button_font_size_px"
+    )
+  };
+  console.info("[Relative size] Resolved size map:", {
+    reason: reason_label,
+    resolved_sizes
+  });
+  return resolved_sizes;
+}
 
 /**
  * @typedef {{
@@ -295,6 +447,16 @@ function random_int(min, max) {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
+/**
+ * @returns {{ viewport_width_px: number, viewport_height_px: number }}
+ */
+function get_viewport_size_px() {
+  return {
+    viewport_width_px: Math.max(1, window.innerWidth),
+    viewport_height_px: Math.max(1, window.innerHeight)
+  };
+}
+
 const application = new Application();
 
 await application.init({
@@ -328,11 +490,128 @@ let tile_textures = null;
 let background_sprite = null;
 /** @type {{ font_family: string, tile_font_size_px: number, tile_fill_color: number, tile_fill_alpha: number } | undefined} */
 let number_mode_style = undefined;
+/** @type {HTMLImageElement | null} */
+let source_image_element = null;
+/** @type {{ grid_w: number, grid_h: number } | null} */
+let image_grid_shape = null;
+/** @type {ResolvedRelativeSizes} */
+let resolved_relative_sizes;
+/** @type {{ cell: Cell, container: Container, label_text: Text, overline_graphics: Graphics }[]} */
+const number_mode_background_visuals = [];
 
 const background_layer = new Container();
 
+/**
+ * @typedef {{
+ *   tile_derivation: { tile_size_px: number, image_rect?: { x: number, y: number, width: number, height: number } },
+ *   board_origin: { x: number, y: number },
+ *   get_cell_world: (cell: Cell) => WorldPoint,
+ *   grid_confines_rect: { x: number, y: number, width: number, height: number }
+ * }} ViewportLayoutDerivation
+ */
+
+/**
+ * Derive board geometry for the current viewport for both game modes.
+ *
+ * @param {string} reason_label
+ * @returns {ViewportLayoutDerivation}
+ */
+function derive_layout_for_viewport(reason_label) {
+  const viewport_size = get_viewport_size_px();
+  if (game_mode === "i") {
+    if (!source_image_element || !image_grid_shape) {
+      throw new Error("Image mode layout derivation requires loaded image metadata.");
+    }
+    const next_tile_derivation = derive_tile_size({
+      viewport_width: viewport_size.viewport_width_px,
+      viewport_height: viewport_size.viewport_height_px,
+      image_width: source_image_element.width,
+      image_height: source_image_element.height,
+      grid_w: image_grid_shape.grid_w,
+      grid_h: image_grid_shape.grid_h,
+      padding_in_tile_units: PADDING_IN_TILE_UNITS,
+      viewport_margin_px: VIEWPORT_MARGIN_PX
+    });
+    const image_rect = next_tile_derivation.image_rect;
+    if (!image_rect) {
+      throw new Error("Image mode requires image_rect.");
+    }
+    const bounds_at_origin = get_grid_bounds(grid, next_tile_derivation.tile_size_px, { x: 0, y: 0 });
+    const next_board_origin = {
+      x: image_rect.x + image_rect.width / 2 - bounds_at_origin.center_x,
+      y: image_rect.y + image_rect.height / 2 - bounds_at_origin.center_y
+    };
+    /** @type {(cell: Cell) => WorldPoint} */
+    const next_get_cell_world = (cell) =>
+      world_from_cell(cell, next_tile_derivation.tile_size_px, next_board_origin);
+    const grid_confines_rect = {
+      x: image_rect.x,
+      y: image_rect.y,
+      width: image_rect.width,
+      height: image_rect.height
+    };
+    console.info("[Layout] Image mode viewport and fit confines:", {
+      reason: reason_label,
+      window_width_px: viewport_size.viewport_width_px,
+      window_height_px: viewport_size.viewport_height_px,
+      viewport_margin_px: VIEWPORT_MARGIN_PX,
+      usable_viewport_width_px: Math.max(1, viewport_size.viewport_width_px - 2 * VIEWPORT_MARGIN_PX),
+      usable_viewport_height_px: Math.max(1, viewport_size.viewport_height_px - 2 * VIEWPORT_MARGIN_PX),
+      grid_confines_rect
+    });
+    return {
+      tile_derivation: next_tile_derivation,
+      board_origin: next_board_origin,
+      get_cell_world: next_get_cell_world,
+      grid_confines_rect
+    };
+  }
+
+  const viewport_derivation = derive_tile_size_and_origin_viewport_only(
+    {
+      viewport_width: viewport_size.viewport_width_px,
+      viewport_height: viewport_size.viewport_height_px,
+      grid_w: grid.w,
+      grid_h: grid.h,
+      padding_in_tile_units: PADDING_IN_TILE_UNITS,
+      viewport_margin_px: VIEWPORT_MARGIN_PX
+    },
+    (next_tile_size_px) => {
+      const bounds = get_grid_bounds(grid, next_tile_size_px, { x: 0, y: 0 });
+      return { center_x: bounds.center_x, center_y: bounds.center_y };
+    }
+  );
+  const grid_confines_rect = {
+    x: VIEWPORT_MARGIN_PX,
+    y: VIEWPORT_MARGIN_PX,
+    width: Math.max(1, viewport_size.viewport_width_px - 2 * VIEWPORT_MARGIN_PX),
+    height: Math.max(1, viewport_size.viewport_height_px - 2 * VIEWPORT_MARGIN_PX)
+  };
+  const next_tile_derivation = {
+    tile_size_px: viewport_derivation.tile_size_px,
+    image_rect: undefined
+  };
+  /** @type {(cell: Cell) => WorldPoint} */
+  const next_get_cell_world = (cell) =>
+    world_from_cell(cell, next_tile_derivation.tile_size_px, viewport_derivation.board_origin);
+  console.info("[Layout] Number mode viewport and fit confines:", {
+    reason: reason_label,
+    window_width_px: viewport_size.viewport_width_px,
+    window_height_px: viewport_size.viewport_height_px,
+    viewport_margin_px: VIEWPORT_MARGIN_PX,
+    grid_confines_rect
+  });
+  return {
+    tile_derivation: next_tile_derivation,
+    board_origin: viewport_derivation.board_origin,
+    get_cell_world: next_get_cell_world,
+    grid_confines_rect
+  };
+}
+
 if (game_mode === "i") {
   const source_image = await load_image(IMAGE_PATH);
+  source_image_element = source_image;
   const has_explicit_image_grid = url_params.grid_w > 0 && url_params.grid_h > 0;
   const grid_derivation = has_explicit_image_grid
     ? {
@@ -347,45 +626,20 @@ if (game_mode === "i") {
           padding_in_tile_units: PADDING_IN_TILE_UNITS
         });
       })();
-  tile_derivation = derive_tile_size({
-    viewport_width: application.screen.width,
-    viewport_height: application.screen.height,
-    image_width: source_image.width,
-    image_height: source_image.height,
+  grid = create_grid(grid_derivation.grid_w, grid_derivation.grid_h);
+  image_grid_shape = {
     grid_w: grid_derivation.grid_w,
-    grid_h: grid_derivation.grid_h,
-    padding_in_tile_units: PADDING_IN_TILE_UNITS,
-    viewport_margin_px: VIEWPORT_MARGIN_PX
-  });
+    grid_h: grid_derivation.grid_h
+  };
+  const initial_layout = derive_layout_for_viewport("initial-image");
+  tile_derivation = initial_layout.tile_derivation;
+  board_origin = initial_layout.board_origin;
+  get_cell_world = initial_layout.get_cell_world;
+  resolved_relative_sizes = resolve_relative_sizes(initial_layout.grid_confines_rect, "initial-image");
   const image_rect = tile_derivation.image_rect;
   if (!image_rect) {
     throw new Error("Image mode requires image_rect.");
   }
-  console.info("[Layout] Image mode viewport and fit confines:", {
-    window_width_px: application.screen.width,
-    window_height_px: application.screen.height,
-    viewport_margin_px: VIEWPORT_MARGIN_PX,
-    usable_viewport_width_px: Math.max(1, application.screen.width - 2 * VIEWPORT_MARGIN_PX),
-    usable_viewport_height_px: Math.max(1, application.screen.height - 2 * VIEWPORT_MARGIN_PX),
-    grid_confines_rect: {
-      x: image_rect.x,
-      y: image_rect.y,
-      width: image_rect.width,
-      height: image_rect.height
-    }
-  });
-  grid = create_grid(grid_derivation.grid_w, grid_derivation.grid_h);
-  const bounds_at_origin = get_grid_bounds(
-    grid,
-    tile_derivation.tile_size_px,
-    { x: 0, y: 0 }
-  );
-  board_origin = {
-    x: image_rect.x + image_rect.width / 2 - bounds_at_origin.center_x,
-    y: image_rect.y + image_rect.height / 2 - bounds_at_origin.center_y
-  };
-  get_cell_world = (/** @param {Cell} cell */ cell) =>
-    world_from_cell(cell, tile_derivation.tile_size_px, board_origin);
 
   tile_textures = bake_tile_textures({
     image: source_image,
@@ -403,57 +657,20 @@ if (game_mode === "i") {
   background_layer.addChild(background_sprite);
 } else {
   grid = create_grid(url_params.grid_w, url_params.grid_h);
-  const viewport_derivation = derive_tile_size_and_origin_viewport_only(
-    {
-      viewport_width: application.screen.width,
-      viewport_height: application.screen.height,
-      grid_w: url_params.grid_w,
-      grid_h: url_params.grid_h,
-      padding_in_tile_units: PADDING_IN_TILE_UNITS,
-      viewport_margin_px: VIEWPORT_MARGIN_PX
-    },
-    (tile_size_px) => {
-      const bounds = get_grid_bounds(grid, tile_size_px, { x: 0, y: 0 });
-      return { center_x: bounds.center_x, center_y: bounds.center_y };
-    }
-  );
-  const usable_viewport_width_px = Math.max(1, application.screen.width - 2 * VIEWPORT_MARGIN_PX);
-  const usable_viewport_height_px = Math.max(1, application.screen.height - 2 * VIEWPORT_MARGIN_PX);
-  console.info("[Layout] Number mode viewport and fit confines:", {
-    window_width_px: application.screen.width,
-    window_height_px: application.screen.height,
-    viewport_margin_px: VIEWPORT_MARGIN_PX,
-    grid_confines_rect: {
-      x: VIEWPORT_MARGIN_PX,
-      y: VIEWPORT_MARGIN_PX,
-      width: usable_viewport_width_px,
-      height: usable_viewport_height_px
-    }
-  });
-  tile_derivation = {
-    tile_size_px: viewport_derivation.tile_size_px,
-    image_rect: undefined
-  };
-  board_origin = viewport_derivation.board_origin;
-  get_cell_world = (/** @param {Cell} cell */ cell) =>
-    world_from_cell(cell, tile_derivation.tile_size_px, board_origin);
+  const initial_layout = derive_layout_for_viewport("initial-number");
+  tile_derivation = initial_layout.tile_derivation;
+  board_origin = initial_layout.board_origin;
+  get_cell_world = initial_layout.get_cell_world;
+  resolved_relative_sizes = resolve_relative_sizes(initial_layout.grid_confines_rect, "initial-number");
 
-  const tile_font_size_px = Math.max(
-    12,
-    Math.min(
-      32,
-      Math.round(tile_derivation.tile_size_px * NUMBER_MODE_TILE_FONT_SIZE_RATIO)
-    )
-  );
+  const tile_font_size_px = resolved_relative_sizes.number_mode_tile_font_size_px;
   number_mode_style = {
     font_family: FONT_FAMILY,
     tile_font_size_px,
     tile_fill_color: NUMBER_MODE_TILE_FILL_COLOR,
     tile_fill_alpha: NUMBER_MODE_TILE_FILL_ALPHA
   };
-  const bg_font_size_px = Math.round(
-    tile_font_size_px * NUMBER_MODE_BACKGROUND_FONT_SIZE_RATIO
-  );
+  const bg_font_size_px = resolved_relative_sizes.number_mode_background_font_size_px;
   const bg_x_offset_px =
     tile_derivation.tile_size_px * NUMBER_MODE_BACKGROUND_X_OFFSET_RATIO;
   const overline_gap_px = 1;
@@ -479,6 +696,12 @@ if (game_mode === "i") {
     overline_graphics.moveTo(-line_half, line_y);
     overline_graphics.lineTo(line_half, line_y);
     overline_graphics.stroke({ width: overline_stroke_px, color: bg_color });
+    number_mode_background_visuals.push({
+      cell,
+      container: bg_container,
+      label_text: bg_label,
+      overline_graphics
+    });
     bg_container.addChild(bg_label);
     bg_container.addChild(overline_graphics);
     background_layer.addChild(bg_container);
@@ -529,7 +752,7 @@ const tile_renderer = create_tile_views({
   get_cell_world,
   tile_size_px: tile_derivation.tile_size_px,
   border_color: BORDER_COLOR,
-  border_thickness_px: BORDER_THICKNESS_PX,
+  border_thickness_px: resolved_relative_sizes.border_thickness_px,
   number_mode_style: number_mode_style
 });
 tile_renderer.sync_all_from_state(board_state);
@@ -546,7 +769,7 @@ const operator_help_text = new Text({
   style: {
     fill: OPERATOR_LABEL_COLOR,
     fontFamily: "Arial",
-    fontSize: 15
+    fontSize: resolved_relative_sizes.operator_help_font_size_px
   }
 });
 operator_help_text.position.set(16, 12);
@@ -560,7 +783,7 @@ const success_popup_title = new Text({
   style: {
     fill: SUCCESS_POPUP_TEXT_COLOR,
     fontFamily: FONT_FAMILY,
-    fontSize: 28
+    fontSize: resolved_relative_sizes.success_popup_title_font_size_px
   }
 });
 const success_popup_message = new Text({
@@ -568,7 +791,7 @@ const success_popup_message = new Text({
   style: {
     fill: SUCCESS_POPUP_TEXT_COLOR,
     fontFamily: FONT_FAMILY,
-    fontSize: 15
+    fontSize: resolved_relative_sizes.success_popup_message_font_size_px
   }
 });
 const success_popup_close_button = new Graphics();
@@ -577,7 +800,7 @@ const success_popup_close_label = new Text({
   style: {
     fill: SUCCESS_POPUP_BUTTON_TEXT_COLOR,
     fontFamily: FONT_FAMILY,
-    fontSize: 14
+    fontSize: resolved_relative_sizes.success_popup_button_font_size_px
   }
 });
 success_popup_layer.addChild(success_popup_background);
@@ -599,6 +822,9 @@ let has_shown_solved_notification = is_explore_mode;
  * Draw static visuals for solved popup.
  */
 function draw_success_popup() {
+  success_popup_title.style.fontSize = resolved_relative_sizes.success_popup_title_font_size_px;
+  success_popup_message.style.fontSize = resolved_relative_sizes.success_popup_message_font_size_px;
+  success_popup_close_label.style.fontSize = resolved_relative_sizes.success_popup_button_font_size_px;
   success_popup_background.clear();
   success_popup_background.roundRect(
     0,
@@ -642,8 +868,9 @@ function draw_success_popup() {
  * Keep solved popup centered on current viewport width.
  */
 function layout_success_popup() {
+  const viewport_size = get_viewport_size_px();
   success_popup_layer.position.set(
-    Math.round((application.screen.width - SUCCESS_POPUP_WIDTH_PX) / 2),
+    Math.round((viewport_size.viewport_width_px - SUCCESS_POPUP_WIDTH_PX) / 2),
     SUCCESS_POPUP_MARGIN_TOP_PX
   );
 }
@@ -658,13 +885,41 @@ function show_success_popup() {
   success_popup_layer.visible = true;
 }
 
+/**
+ * @param {number} background_font_size_px
+ */
+function redraw_number_mode_background_labels(background_font_size_px) {
+  for (const visual of number_mode_background_visuals) {
+    const world = get_cell_world(visual.cell);
+    const background_x_offset_px = tile_derivation.tile_size_px * NUMBER_MODE_BACKGROUND_X_OFFSET_RATIO;
+    visual.container.position.set(world.x + background_x_offset_px, world.y);
+    visual.label_text.style.fontSize = background_font_size_px;
+    const line_half = background_font_size_px * 0.4;
+    const line_y = -background_font_size_px / 2 - 1;
+    visual.overline_graphics.clear();
+    visual.overline_graphics.moveTo(-line_half, line_y);
+    visual.overline_graphics.lineTo(line_half, line_y);
+    visual.overline_graphics.stroke({ width: 1, color: 0x888888 });
+  }
+}
+
+/**
+ * Rebuild anchor instances using the latest geometry.
+ */
+function rebuild_operator_instances() {
+  instances_by_operator_id.clear();
+  for (const operator_def of allowed_operator_defs) {
+    instances_by_operator_id.set(
+      operator_def.id,
+      build_anchor_instances(grid, operator_def.id, get_cell_world, tile_derivation.tile_size_px)
+    );
+  }
+}
+
 success_popup_close_button.eventMode = "static";
 success_popup_close_button.cursor = "pointer";
 success_popup_close_button.on("pointertap", () => {
   hide_success_popup();
-});
-window.addEventListener("resize", () => {
-  layout_success_popup();
 });
 
 /**
@@ -792,7 +1047,7 @@ function redraw_hover_outline(instance) {
     hover_outline_graphics.lineTo(edge_record.end.x, edge_record.end.y);
   }
   hover_outline_graphics.stroke({
-    width: HOVER_OUTLINE_THICKNESS_PX,
+    width: resolved_relative_sizes.hover_outline_thickness_px,
     color: HOVER_HIGHLIGHT_COLOR
   });
 }
@@ -817,10 +1072,15 @@ function redraw_pivot_markers(operator_id) {
   for (const instance of instances) {
     const pivot_marker = new Graphics();
     // Outer circle (black stroke/ring)
-    pivot_marker.circle(0, 0, PIVOT_MARKER_INNER_RADIUS_PX + PIVOT_MARKER_STROKE_WIDTH_PX);
+    pivot_marker.circle(
+      0,
+      0,
+      resolved_relative_sizes.pivot_marker_inner_radius_px +
+        resolved_relative_sizes.pivot_marker_stroke_width_px
+    );
     pivot_marker.fill({ color: PIVOT_MARKER_STROKE_COLOR });
     // Inner circle (white fill)
-    pivot_marker.circle(0, 0, PIVOT_MARKER_INNER_RADIUS_PX);
+    pivot_marker.circle(0, 0, resolved_relative_sizes.pivot_marker_inner_radius_px);
     pivot_marker.fill({ color: PIVOT_MARKER_FILL_COLOR, alpha: PIVOT_MARKER_ALPHA });
     pivot_marker.position.set(instance.anchor_world.x, instance.anchor_world.y);
     pivots_layer.addChild(pivot_marker);
@@ -912,11 +1172,77 @@ function update_operator_help_text(operator_id) {
     "Switch operator: 1..2 | Space: image preview | Left click: CW | Right click: CCW";
 }
 
+/**
+ * @param {string} reason_label
+ */
+function recompute_layout_and_visuals(reason_label) {
+  const viewport_layout = derive_layout_for_viewport(reason_label);
+  tile_derivation = viewport_layout.tile_derivation;
+  board_origin = viewport_layout.board_origin;
+  get_cell_world = viewport_layout.get_cell_world;
+  resolved_relative_sizes = resolve_relative_sizes(viewport_layout.grid_confines_rect, reason_label);
+  console.info("[Layout] Geometry summary:", {
+    reason: reason_label,
+    mode: game_mode,
+    tile_size_px: tile_derivation.tile_size_px,
+    board_origin,
+    grid_confines_rect: viewport_layout.grid_confines_rect
+  });
+  tile_renderer.set_layout(tile_derivation.tile_size_px, get_cell_world);
+  if (game_mode === "i") {
+    if (!source_image_element) {
+      throw new Error("Image mode requires loaded source image for resize.");
+    }
+    const image_rect = tile_derivation.image_rect;
+    if (!image_rect) {
+      throw new Error("Image mode requires image_rect for resize.");
+    }
+    if (background_sprite) {
+      background_sprite.position.set(image_rect.x, image_rect.y);
+      background_sprite.width = image_rect.width;
+      background_sprite.height = image_rect.height;
+    }
+    const next_tile_textures = bake_tile_textures({
+      image: source_image_element,
+      tile_size_px: tile_derivation.tile_size_px,
+      home_cells: grid.all_cells,
+      get_cell_world,
+      image_rect
+    });
+    tile_renderer.set_tile_textures(next_tile_textures);
+    tile_textures = next_tile_textures;
+  } else {
+    redraw_number_mode_background_labels(resolved_relative_sizes.number_mode_background_font_size_px);
+  }
+  tile_renderer.set_border_thickness(resolved_relative_sizes.border_thickness_px);
+  if (game_mode === "n") {
+    tile_renderer.set_number_mode_font_size(resolved_relative_sizes.number_mode_tile_font_size_px);
+  }
+  tile_renderer.sync_all_from_state(board_state);
+  rebuild_operator_instances();
+  const selected_operator_id = input_controller.get_selected_operator_id();
+  input_controller.set_instances(instances_by_operator_id.get(selected_operator_id) ?? []);
+  operator_help_text.style.fontSize = resolved_relative_sizes.operator_help_font_size_px;
+  success_popup_title.style.fontSize = resolved_relative_sizes.success_popup_title_font_size_px;
+  success_popup_message.style.fontSize = resolved_relative_sizes.success_popup_message_font_size_px;
+  success_popup_close_label.style.fontSize = resolved_relative_sizes.success_popup_button_font_size_px;
+  input_controller.set_pivot_hit_radius(resolved_relative_sizes.pivot_hit_radius_px);
+  update_operator_help_text(selected_operator_id);
+  draw_success_popup();
+  layout_success_popup();
+  redraw_pivot_markers(selected_operator_id);
+  redraw_hover_outline(hovered_instance);
+  console.info("[Relative size] Applied runtime visual sizes:", {
+    reason: reason_label,
+    resolved_relative_sizes
+  });
+}
+
 const initial_operator_id = allowed_operator_ids[0];
 
 const input_controller = create_input_controller({
   canvas_element: application.canvas,
-  pivot_hit_radius_px: Math.max(PIVOT_HIT_RADIUS_MIN_PX, tile_derivation.tile_size_px * 0.33),
+  pivot_hit_radius_px: resolved_relative_sizes.pivot_hit_radius_px,
   allowed_operator_ids,
   initial_operator_id,
   /** @param {string} operator_id */
@@ -952,6 +1278,35 @@ const input_controller = create_input_controller({
 input_controller.set_instances(instances_by_operator_id.get(initial_operator_id) ?? []);
 update_operator_help_text(initial_operator_id);
 redraw_pivot_markers(initial_operator_id);
+recompute_layout_and_visuals("post-init");
+
+let resize_recompute_scheduled = false;
+/**
+ * @param {string} reason_label
+ */
+function schedule_resize_recompute(reason_label) {
+  if (resize_recompute_scheduled) {
+    return;
+  }
+  resize_recompute_scheduled = true;
+  // Wait one frame so the renderer/window dimensions settle first.
+  requestAnimationFrame(() => {
+    resize_recompute_scheduled = false;
+    recompute_layout_and_visuals(reason_label);
+  });
+}
+
+window.addEventListener("resize", () => {
+  schedule_resize_recompute("resize-window");
+});
+application.renderer.on("resize", () => {
+  schedule_resize_recompute("resize-renderer");
+});
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", () => {
+    schedule_resize_recompute("resize-visual-viewport");
+  });
+}
 
 window.addEventListener("keydown", (keyboard_event) => {
   if (keyboard_event.code !== "Space") {

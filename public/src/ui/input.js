@@ -23,6 +23,7 @@
  * @returns {{
  *   set_instances: (instances: AnchorInstance[]) => void,
  *   set_interaction_locked: (is_locked: boolean) => void,
+ *   set_pivot_hit_radius: (pivot_hit_radius_px: number) => void,
  *   get_selected_operator_id: () => string
  * }}
  */
@@ -33,6 +34,7 @@ export function create_input_controller(options) {
   let hover_instance = null;
   /** @type {{ x: number, y: number } | null} */
   let last_pointer_world = null;
+  let pivot_hit_radius_px = options.pivot_hit_radius_px;
   let interaction_locked = false;
   let selected_operator_id = options.initial_operator_id;
 
@@ -59,7 +61,7 @@ export function create_input_controller(options) {
       const delta_x = anchor_instance.anchor_world.x - pointer_world.x;
       const delta_y = anchor_instance.anchor_world.y - pointer_world.y;
       const distance = Math.hypot(delta_x, delta_y);
-      if (distance > options.pivot_hit_radius_px) {
+      if (distance > pivot_hit_radius_px) {
         continue;
       }
       if (!best_anchor_match || distance < best_anchor_match.distance) {
@@ -154,6 +156,13 @@ export function create_input_controller(options) {
      */
     set_interaction_locked(is_locked) {
       interaction_locked = is_locked;
+      recompute_hover_from_last_pointer();
+    },
+    /**
+     * @param {number} next_pivot_hit_radius_px
+     */
+    set_pivot_hit_radius(next_pivot_hit_radius_px) {
+      pivot_hit_radius_px = next_pivot_hit_radius_px;
       recompute_hover_from_last_pointer();
     },
     /**
