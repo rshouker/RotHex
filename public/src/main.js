@@ -23,13 +23,13 @@ const PADDING_IN_TILE_UNITS = 0.5;
 const VIEWPORT_MARGIN_PX = 24;
 const PIVOT_HIT_RADIUS_MIN_PX = 10;
 const ANIMATION_MS = 180;
-const BORDER_THICKNESS_PX = 2;
+const BORDER_THICKNESS_PX = 3;
 const BORDER_COLOR = 0xe6e6e6;
 const HOVER_HIGHLIGHT_COLOR = 0x26d6ff;
 const HOVER_OUTLINE_THICKNESS_PX = 4;
 const HOVER_OUTLINE_EDGE_KEY_PRECISION = 3;
 const OPERATOR_LABEL_COLOR = 0xffffff;
-const PIVOT_MARKER_INNER_RADIUS_PX = 4;
+const PIVOT_MARKER_INNER_RADIUS_PX = 5;
 const PIVOT_MARKER_STROKE_WIDTH_PX = 2;
 const PIVOT_MARKER_FILL_COLOR = 0xffff00;
 const PIVOT_MARKER_STROKE_COLOR = 0x000000;
@@ -67,7 +67,9 @@ const SUCCESS_POPUP_CORNER_RADIUS_PX = 12;
  */
 
 /**
- * Parse and validate mode, h, w, n, explore from URL. In number mode n is ignored.
+ * Parse and validate mode, h, w, n, explore from URL.
+ * In number mode n is ignored.
+ * In image mode, h/w (if both present) override n.
  * If exactly one of h or w is present, throws.
  *
  * @returns {UrlParams}
@@ -81,12 +83,31 @@ function parse_url_params() {
   const n_param = search_params.get("n");
   const explore_param = search_params.get("explore");
   const is_explore_mode = explore_param === "1";
+  console.info("[URL params] Raw query:", {
+    search: window.location.search,
+    mode: mode_param,
+    h: h_param,
+    w: w_param,
+    n: n_param,
+    explore: explore_param
+  });
+  if (mode_param !== "n" && mode_param !== "i" && mode_param !== null) {
+    console.info(`[URL params] Unknown mode='${mode_param}', defaulting to number mode ('n').`);
+  }
+  if (explore_param !== null && explore_param !== "1") {
+    console.info(
+      `[URL params] explore='${explore_param}' is not '1'; explore mode remains disabled.`
+    );
+  }
 
   if (mode === "n") {
+    // Number mode parses explicit h/w dimensions; both must be present together.
     const has_h = h_param !== null && h_param !== "";
     const has_w = w_param !== null && w_param !== "";
     if (has_h !== has_w) {
-      throw new Error("URL params h and w must both be present or both omitted.");
+      throw new Error(
+        `URL params h and w must both be present or both omitted (received h='${h_param}', w='${w_param}').`
+      );
     }
     let grid_w = NUMBER_MODE_DEFAULT_GRID_W;
     let grid_h = NUMBER_MODE_DEFAULT_GRID_H;
@@ -94,41 +115,119 @@ function parse_url_params() {
       const parsed_w = Number(w_param);
       const parsed_h = Number(h_param);
       if (!Number.isFinite(parsed_w) || !Number.isFinite(parsed_h)) {
-        throw new Error("URL params h and w must be finite numbers.");
+        throw new Error(
+          `URL params h and w must be finite numbers (received h='${h_param}', w='${w_param}').`
+        );
       }
       grid_w = Math.round(parsed_w);
       grid_h = Math.round(parsed_h);
       if (grid_w < 1 || grid_w > 50) {
-        throw new Error("URL param w must be between 1 and 50.");
+        throw new Error(`URL param w must be between 1 and 50 (received ${grid_w}).`);
       }
       if (grid_h < 1 || grid_h > 35) {
-        throw new Error("URL param h must be between 1 and 35.");
+        throw new Error(`URL param h must be between 1 and 35 (received ${grid_h}).`);
       }
       if (grid_h % 2 === 0) {
-        throw new Error("URL param h (grid height) must be odd.");
+        throw new Error(`URL param h (grid height) must be odd (received ${grid_h}).`);
       }
+      console.info("[URL params] Number mode dimensions accepted:", {
+        grid_w,
+        grid_h
+      });
+    } else {
+      console.info("[URL params] Number mode dimensions omitted; using defaults:", {
+        grid_w,
+        grid_h
+      });
     }
-    return { mode: "n", grid_w, grid_h, target_cell_count: 0, is_explore_mode };
+    /** @type {UrlParams} */
+    const parsed_params = {
+      mode: "n",
+      grid_w,
+      grid_h,
+      target_cell_count: 0,
+      is_explore_mode
+    };
+    console.info("[URL params] Final parsed params:", parsed_params);
+    return parsed_params;
   }
 
-  // Image mode: derive grid from n (target cell count).
+  // Image mode: use explicit h/w when provided, otherwise derive from n.
+  const has_h = h_param !== null && h_param !== "";
+  const has_w = w_param !== null && w_param !== "";
+  if (has_h !== has_w) {
+    throw new Error(
+      `URL params h and w must both be present or both omitted (received h='${h_param}', w='${w_param}').`
+    );
+  }
+  let grid_w = 0;
+  let grid_h = 0;
+  if (has_h && has_w) {
+    const parsed_w = Number(w_param);
+    const parsed_h = Number(h_param);
+    if (!Number.isFinite(parsed_w) || !Number.isFinite(parsed_h)) {
+      throw new Error(
+        `URL params h and w must be finite numbers (received h='${h_param}', w='${w_param}').`
+      );
+    }
+    grid_w = Math.round(parsed_w);
+    grid_h = Math.round(parsed_h);
+    if (grid_w < 1 || grid_w > 50) {
+      throw new Error(`URL param w must be between 1 and 50 (received ${grid_w}).`);
+    }
+    if (grid_h < 1 || grid_h > 35) {
+      throw new Error(`URL param h must be between 1 and 35 (received ${grid_h}).`);
+    }
+    if (grid_h % 2 === 0) {
+      throw new Error(`URL param h (grid height) must be odd (received ${grid_h}).`);
+    }
+    console.info("[URL params] Image mode dimensions accepted:", {
+      grid_w,
+      grid_h
+    });
+  }
+
   let target_cell_count = DEFAULT_TARGET_CELL_COUNT;
-  if (n_param !== null && n_param !== "") {
+  if (has_h && has_w) {
+    if (n_param !== null && n_param !== "") {
+      console.info("[URL params] Image mode h/w are present; n is ignored.");
+    } else {
+      console.info("[URL params] Image mode uses explicit h/w.");
+    }
+  } else if (n_param !== null && n_param !== "") {
     const parsed = Number(n_param);
     if (Number.isFinite(parsed)) {
       const rounded = Math.round(parsed);
       if (rounded >= 7 && rounded <= 400) {
         target_cell_count = rounded;
+        console.info(
+          `[URL params] Image mode n accepted: n='${n_param}' -> target_cell_count=${target_cell_count}.`
+        );
+      } else {
+        console.info(
+          `[URL params] Image mode n='${n_param}' rounded to ${rounded}, outside [7, 400]; using default ${DEFAULT_TARGET_CELL_COUNT}.`
+        );
       }
+    } else {
+      console.info(
+        `[URL params] Image mode n='${n_param}' is not a finite number; using default ${DEFAULT_TARGET_CELL_COUNT}.`
+      );
     }
+  } else if (!has_h && !has_w) {
+    console.info(
+      `[URL params] Image mode n omitted; using default ${DEFAULT_TARGET_CELL_COUNT}.`
+    );
   }
-  return {
+  /** @type {UrlParams} */
+  const parsed_params = {
     mode: "i",
-    grid_w: 0,
-    grid_h: 0,
+    grid_w,
+    grid_h,
     target_cell_count,
     is_explore_mode
   };
+  console.info("[URL params] Final parsed params:", parsed_params);
+  return parsed_params;
 }
 
 /**
@@ -234,12 +333,20 @@ const background_layer = new Container();
 
 if (game_mode === "i") {
   const source_image = await load_image(IMAGE_PATH);
-  const image_aspect = source_image.width / source_image.height;
-  const grid_derivation = derive_grid_shape({
-    target_cell_count: url_params.target_cell_count,
-    image_aspect,
-    padding_in_tile_units: PADDING_IN_TILE_UNITS
-  });
+  const has_explicit_image_grid = url_params.grid_w > 0 && url_params.grid_h > 0;
+  const grid_derivation = has_explicit_image_grid
+    ? {
+        grid_w: url_params.grid_w,
+        grid_h: url_params.grid_h
+      }
+    : (() => {
+        const image_aspect = source_image.width / source_image.height;
+        return derive_grid_shape({
+          target_cell_count: url_params.target_cell_count,
+          image_aspect,
+          padding_in_tile_units: PADDING_IN_TILE_UNITS
+        });
+      })();
   tile_derivation = derive_tile_size({
     viewport_width: application.screen.width,
     viewport_height: application.screen.height,
@@ -254,6 +361,19 @@ if (game_mode === "i") {
   if (!image_rect) {
     throw new Error("Image mode requires image_rect.");
   }
+  console.info("[Layout] Image mode viewport and fit confines:", {
+    window_width_px: application.screen.width,
+    window_height_px: application.screen.height,
+    viewport_margin_px: VIEWPORT_MARGIN_PX,
+    usable_viewport_width_px: Math.max(1, application.screen.width - 2 * VIEWPORT_MARGIN_PX),
+    usable_viewport_height_px: Math.max(1, application.screen.height - 2 * VIEWPORT_MARGIN_PX),
+    grid_confines_rect: {
+      x: image_rect.x,
+      y: image_rect.y,
+      width: image_rect.width,
+      height: image_rect.height
+    }
+  });
   grid = create_grid(grid_derivation.grid_w, grid_derivation.grid_h);
   const bounds_at_origin = get_grid_bounds(
     grid,
@@ -297,6 +417,19 @@ if (game_mode === "i") {
       return { center_x: bounds.center_x, center_y: bounds.center_y };
     }
   );
+  const usable_viewport_width_px = Math.max(1, application.screen.width - 2 * VIEWPORT_MARGIN_PX);
+  const usable_viewport_height_px = Math.max(1, application.screen.height - 2 * VIEWPORT_MARGIN_PX);
+  console.info("[Layout] Number mode viewport and fit confines:", {
+    window_width_px: application.screen.width,
+    window_height_px: application.screen.height,
+    viewport_margin_px: VIEWPORT_MARGIN_PX,
+    grid_confines_rect: {
+      x: VIEWPORT_MARGIN_PX,
+      y: VIEWPORT_MARGIN_PX,
+      width: usable_viewport_width_px,
+      height: usable_viewport_height_px
+    }
+  });
   tile_derivation = {
     tile_size_px: viewport_derivation.tile_size_px,
     image_rect: undefined
